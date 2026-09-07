@@ -1,0 +1,8 @@
+# ============================================================
+#  CFL Study Configuration  (used by main_cfl_study)
+#  Edit values below and rerun without recompiling.
+# ============================================================
+
+n   = 1201
+c   = 0.5
+CFL = 0.25 0.5 0.75 1.0 1.25

@@ -29,6 +29,12 @@ InitialCondition make_initial_condition(const Mesh& mesh, double xStart, double 
     return ic;
 }
 
+InitialCondition make_gaussian_initial_condition(const Mesh& mesh, double x0, double sigma) {
+    InitialCondition ic;
+    ic.u0 = (-((mesh.x.array() - x0) / sigma).square()).exp();
+    return ic;
+}
+
 Eigen::VectorXd explicit_backward(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
     Eigen::VectorXd u = u0;

@@ -1,0 +1,27 @@
+# ============================================================
+#  Convergence Study Configuration  (used by main_convergence)
+#  Edit values below and rerun without recompiling.
+#  Fixed dt, sweep over n (mesh points) to isolate spatial error.
+# ============================================================
+
+c = 0.5
+
+# ------------------------------------------------------------
+#  initial condition used for the error measurement
+#  ic = pulse    -> the discontinuous top-hat from the homework.
+#                   A jump discontinuity caps the OBSERVED order well
+#                   below the scheme's nominal order (Gibbs effect),
+#                   regardless of the scheme -- expect ~0.3-0.6, not 1 or 2.
+#  ic = gaussian -> a smooth bump. Needed to actually see the nominal
+#                   order (1 for explicit_backward/lax, 2 for
+#                   lax_wendroff/leap_frog) emerge as h -> 0.
+# ------------------------------------------------------------
+ic             = gaussian
+gaussian_x0    = 0.75
+gaussian_sigma = 0.1
+
+# ------------------------------------------------------------
+#  space study: fixed dt, sweep over n
+# ------------------------------------------------------------
+dt       = 0.0001
+n_values = 51 101 201 401 801 1601 3201 3601 4001 4401

@@ -25,6 +25,10 @@ struct InitialCondition {
 
 InitialCondition make_initial_condition(const Mesh& mesh, double xStart, double xEnd);
 
+// Smooth (infinitely differentiable) pulse, for convergence studies where a
+// discontinuous initial condition would cap the observed order of accuracy.
+InitialCondition make_gaussian_initial_condition(const Mesh& mesh, double x0, double sigma);
+
 Eigen::VectorXd explicit_backward(const Eigen::VectorXd& u0, double CFL, int nSteps);
 Eigen::VectorXd explicit_forward(const Eigen::VectorXd& u0, double CFL, int nSteps);
 Eigen::VectorXd leap_frog(const Eigen::VectorXd& u0, double CFL, int nSteps);

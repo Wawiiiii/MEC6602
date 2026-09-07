@@ -21,5 +21,8 @@ target_include_directories(schemes PUBLIC include)
 target_link_libraries(schemes PUBLIC Eigen3::Eigen)
 
 
-add_executable(main_part_1 main_part_1.cpp)
-target_link_libraries(main_part_1 PRIVATE schemes)
+add_executable(main_cfl_study main_cfl_study.cpp)
+target_link_libraries(main_cfl_study PRIVATE schemes)
+
+add_executable(main_convergence main_convergence.cpp)
+target_link_libraries(main_convergence PRIVATE schemes)

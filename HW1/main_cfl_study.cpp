@@ -7,14 +7,69 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 constexpr double PI = 3.14159265358979323846;
 
-int main() {
+struct SimulationConfig {
     int n = 1201;
+    double c = 0.5;
+    std::vector<double> CFL_values = {0.25, 0.5, 0.75, 1.0, 1.25};
+};
+
+SimulationConfig read_simulation_config(const std::string& filename) {
+    SimulationConfig config;
+    std::ifstream file(filename);
+    if (!file) {
+        std::cout << "Warning: could not open " << filename
+                  << ", using default parameters." << std::endl;
+        return config;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::size_t comment_pos = line.find('#');
+        if (comment_pos != std::string::npos) {
+            line = line.substr(0, comment_pos);
+        }
+
+        std::size_t eq_pos = line.find('=');
+        if (eq_pos == std::string::npos) {
+            continue;
+        }
+
+        std::istringstream key_stream(line.substr(0, eq_pos));
+        std::string key;
+        key_stream >> key;
+        if (key.empty()) {
+            continue;
+        }
+
+        std::istringstream value_stream(line.substr(eq_pos + 1));
+
+        if (key == "n") {
+            value_stream >> config.n;
+        } else if (key == "c") {
+            value_stream >> config.c;
+        } else if (key == "CFL") {
+            config.CFL_values.clear();
+            double value;
+            while (value_stream >> value) {
+                config.CFL_values.push_back(value);
+            }
+        }
+    }
+
+    return config;
+}
+
+int main() {
+    SimulationConfig config = read_simulation_config("cfl_study.txt");
+
+    int n = config.n;
     double xMin = 0.0;
     double xMax = PI;
-    double c = 1;
+    double c = config.c;
 
     Mesh mesh = make_mesh(n, xMin, xMax);
     InitialCondition ic = make_initial_condition(mesh, 0.5, 1.0);
@@ -23,7 +78,7 @@ int main() {
     double x_mid_final = 2.5;
     double t_final = (x_mid_final - x_mid_0) / c;
 
-    double CFL_values[] = {0.1, 0.2,0,25, 0.3, 0.4, 0.5, 0.6, 0.7, 0,75, 0.8, 0.9, 1.0, 1.25};
+    const std::vector<double>& CFL_values = config.CFL_values;
 
     std::map<std::string, std::function<Eigen::VectorXd(const Eigen::VectorXd&, double, int)>> schemes = {
         {"explicit_backward", explicit_backward},
