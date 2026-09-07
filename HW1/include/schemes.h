@@ -1,0 +1,32 @@
+#pragma once
+
+
+#include <Eigen/Dense>
+
+struct Mesh { 
+    Eigen::VectorXd x; 
+    double dx; 
+    int n; 
+}; 
+
+struct TimeParams{
+    double dt;
+    double CFL;
+    int nSteps;
+};
+
+Mesh make_mesh(int n, double xMin, double xMax);
+
+TimeParams make_time_params(double CFL, double dx, double c, double t_final);
+
+struct InitialCondition {
+    Eigen::VectorXd u0;
+};
+
+InitialCondition make_initial_condition(const Mesh& mesh, double xStart, double xEnd);
+
+Eigen::VectorXd explicit_backward(const Eigen::VectorXd& u0, double CFL, int nSteps);
+Eigen::VectorXd explicit_forward(const Eigen::VectorXd& u0, double CFL, int nSteps);
+Eigen::VectorXd leap_frog(const Eigen::VectorXd& u0, double CFL, int nSteps);
+Eigen::VectorXd lax_wendroff(const Eigen::VectorXd& u0, double CFL, int nSteps);
+Eigen::VectorXd lax(const Eigen::VectorXd& u0, double CFL, int nSteps);

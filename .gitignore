@@ -1,0 +1,23 @@
+# CMake
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Compiled binaries
+*.exe
+*.o
+*.obj
+main_part_1
+
+# Simulation outputs
+*.csv
+*.dat
+
+# Python
+.venv/
+__pycache__/
+
+# Editor
+.vscode/
