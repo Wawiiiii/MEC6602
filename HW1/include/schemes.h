@@ -2,6 +2,8 @@
 
 
 #include <Eigen/Dense>
+#include <Eigen/SparseLU>
+#include <vector>
 
 struct Mesh { 
     Eigen::VectorXd x; 
@@ -34,3 +36,6 @@ Eigen::VectorXd explicit_forward(const Eigen::VectorXd& u0, double CFL, int nSte
 Eigen::VectorXd leap_frog(const Eigen::VectorXd& u0, double CFL, int nSteps);
 Eigen::VectorXd lax_wendroff(const Eigen::VectorXd& u0, double CFL, int nSteps);
 Eigen::VectorXd lax(const Eigen::VectorXd& u0, double CFL, int nSteps);
+Eigen::VectorXd scheme_2space_4time(const Eigen::VectorXd& u0, double CFL, int nSteps);
+Eigen::VectorXd scheme_4space_2time(const Eigen::VectorXd& u0, double CFL, int nSteps);
+Eigen::VectorXd scheme_theta(const Eigen::VectorXd& u0, double CFL, int nSteps, double theta = 0.5);
