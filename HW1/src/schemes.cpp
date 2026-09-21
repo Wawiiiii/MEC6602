@@ -201,3 +201,71 @@ Eigen::VectorXd scheme_theta(const Eigen::VectorXd& u0, double CFL,
 
     return u_current;
 }
+
+
+Eigen::VectorXd nozzle_area(Eigen::VectorXd x);
+{
+    return 1.398 + 0.347 * std::tanh(0.8*x - 4);
+}
+
+Eigen::VectorXd der_nozzle_area(Eigen::VectorXd x);
+{
+    return 0.2776 * (1/std::cosh(0.8*x - 4)) * (1/std::cosh(0.8*x - 4));
+}
+
+Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach=1.25, double convergence = 1e-6)
+{
+    const double gamma = 1.4;
+    const double R = 287.0;
+    const double T = 300.0;
+    const double P = 101325.0;
+    const double rho = P / (R * T);
+    const double e = R * T / (gamma - 1.0);
+    const double E = e + 0.5 * u_in * u_in;
+    const double H = E + P / rho;
+    const double c = std::sqrt(gamma * R * T);
+    const double u_in = Mach * c;
+
+    bool conv = false;
+    double residual = 1.0;
+    int n = static_cast<int>(10.0 / dx) + 1;
+    Eigen::MatrixXd Q_prev(3, n);
+    Eigen::MatrixXd Q_new(3, n);
+    Eigen::MatrixXd E_prev(3,n);
+    Eigen::MatrixXd E_new(3,n);
+    Eigen::MatrixXd S_prev(3,n);
+    Eigen::MatrixXd S_new(3,n);
+
+   
+    Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(n, 0, 10);
+
+    Eigen::VectorXd A = nozzle_area(x);
+    Eigen::VectorXd dAdx = der_nozzle_area(x);
+
+    Q_prev(0,Eigen::all) = (rho*A).transpose();
+    Q_prev(1,Eigen::all) = (rho*u_in*A).transpose();
+    Q_prev(2, Eigen::all) = (rho * E * A).transpose();
+
+    E_prev(0,Eigen::all) = (rho*u_in*A).transpose();
+    E_prev(1,Eigen::all) = ((rho*u_in*u_in + P)*A).transpose();
+    E_prev(2,Eigen::all) = (rho*u_in*H*A).transpose();
+    
+    S_prev(0,Eigen::all) = Eigen::VectorXd::Zero(n);
+    S_prev(1,Eigen::all) = (P*dAdx).transpose();
+    S_prev(2,Eigen::all) = Eigen::VectorXd::Zero(n);
+
+    while (!conv)
+    {
+
+
+
+        residual = (Q_new - Q_prev).norm();
+
+        if (residual < convergence)
+            conv = true;
+
+        Q_prev = Q_new;
+    }
+
+    return Q_new;
+}
