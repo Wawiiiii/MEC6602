@@ -46,4 +46,4 @@ Eigen::VectorXd scheme_2space_4time(const Eigen::VectorXd &u0, double CFL, int n
 Eigen::VectorXd scheme_4space_2time(const Eigen::VectorXd &u0, double CFL, int nSteps);
 Eigen::VectorXd scheme_theta(const Eigen::VectorXd &u0, double CFL, int nSteps, double theta = 0.5);
 
-Eigen::VectorXd euler1d_mackcormack(double CFL, double u, double dx, double Mach=1.25, double convergence = 1e-6);
+Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach=1.25, double convergence = 1e-6);

@@ -1,5 +1,7 @@
 #include "schemes.h"
+#include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 Mesh make_mesh(int n, double xMin, double xMax) { 
 
@@ -203,69 +205,90 @@ Eigen::VectorXd scheme_theta(const Eigen::VectorXd& u0, double CFL,
 }
 
 
-Eigen::VectorXd nozzle_area(Eigen::VectorXd x);
+double nozzle_area(double x)
 {
     return 1.398 + 0.347 * std::tanh(0.8*x - 4);
 }
 
-Eigen::VectorXd der_nozzle_area(Eigen::VectorXd x);
+double der_nozzle_area(double x)
 {
-    return 0.2776 * (1/std::cosh(0.8*x - 4)) * (1/std::cosh(0.8*x - 4));
+    const double sech = 1.0 / std::cosh(0.8*x - 4);
+    return 0.2776 * sech * sech;
 }
 
-Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach=1.25, double convergence = 1e-6)
+Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach, double convergence)
 {
+    if (CFL <= 0.0 || dx <= 0.0 || Mach <= 0.0 || convergence <= 0.0 || dx > 5.0)
+        throw std::invalid_argument("CFL, dx, Mach and convergence must be positive, with dx <= 5");
+
+    (void)u; // Kept in the public signature; inlet velocity is set by Mach below.
     const double gamma = 1.4;
     const double R = 287.0;
     const double T = 300.0;
     const double P = 101325.0;
     const double rho = P / (R * T);
     const double e = R * T / (gamma - 1.0);
-    const double E = e + 0.5 * u_in * u_in;
-    const double H = E + P / rho;
     const double c = std::sqrt(gamma * R * T);
     const double u_in = Mach * c;
+    const double E = e + 0.5 * u_in * u_in;
 
-    bool conv = false;
-    double residual = 1.0;
     int n = static_cast<int>(10.0 / dx) + 1;
-    Eigen::MatrixXd Q_prev(3, n);
-    Eigen::MatrixXd Q_new(3, n);
-    Eigen::MatrixXd E_prev(3,n);
-    Eigen::MatrixXd E_new(3,n);
-    Eigen::MatrixXd S_prev(3,n);
-    Eigen::MatrixXd S_new(3,n);
-
-   
+    const double grid_dx = 10.0 / (n - 1);
     Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(n, 0, 10);
+    Eigen::VectorXd A = x.unaryExpr([](double xi) { return nozzle_area(xi); });
+    Eigen::VectorXd dAdx = x.unaryExpr([](double xi) { return der_nozzle_area(xi); });
 
-    Eigen::VectorXd A = nozzle_area(x);
-    Eigen::VectorXd dAdx = der_nozzle_area(x);
+    Eigen::MatrixXd Q_prev(3, n);
+    Q_prev.row(0) = (rho * A).transpose();
+    Q_prev.row(1) = (rho * u_in * A).transpose();
+    Q_prev.row(2) = (rho * E * A).transpose();
 
-    Q_prev(0,Eigen::all) = (rho*A).transpose();
-    Q_prev(1,Eigen::all) = (rho*u_in*A).transpose();
-    Q_prev(2, Eigen::all) = (rho * E * A).transpose();
+    auto flux_and_source = [&](const Eigen::MatrixXd& Q, Eigen::MatrixXd& flux,
+                               Eigen::MatrixXd& source) {
+        double max_speed = 0.0;
+        for (int i = 0; i < n; ++i) {
+            const double density = Q(0, i) / A(i);
+            const double velocity = Q(1, i) / Q(0, i);
+            const double pressure = (gamma - 1.0) *
+                (Q(2, i) / A(i) - 0.5 * density * velocity * velocity);
+            if (!std::isfinite(pressure) || pressure <= 0.0 || density <= 0.0)
+                throw std::runtime_error("MacCormack step produced a nonphysical state");
+            max_speed = std::max(max_speed, std::abs(velocity) + std::sqrt(gamma * pressure / density));
+            flux(0, i) = Q(1, i);
+            flux(1, i) = Q(1, i) * velocity + pressure * A(i);
+            flux(2, i) = velocity * (Q(2, i) + pressure * A(i));
+            source(0, i) = 0.0;
+            source(1, i) = pressure * dAdx(i);
+            source(2, i) = 0.0;
+        }
+        return max_speed;
+    };
 
-    E_prev(0,Eigen::all) = (rho*u_in*A).transpose();
-    E_prev(1,Eigen::all) = ((rho*u_in*u_in + P)*A).transpose();
-    E_prev(2,Eigen::all) = (rho*u_in*H*A).transpose();
-    
-    S_prev(0,Eigen::all) = Eigen::VectorXd::Zero(n);
-    S_prev(1,Eigen::all) = (P*dAdx).transpose();
-    S_prev(2,Eigen::all) = Eigen::VectorXd::Zero(n);
+    Eigen::MatrixXd flux_prev(3, n), source_prev(3, n);
+    Eigen::MatrixXd flux_pred(3, n), source_pred(3, n);
+    for (int step = 0; step < 100000; ++step) {
+        const double max_speed = flux_and_source(Q_prev, flux_prev, source_prev);
+        const double dt = CFL * grid_dx / max_speed;
 
-    while (!conv)
-    {
+        Eigen::MatrixXd Q_pred = Q_prev;
+        for (int i = 1; i < n - 1; ++i)
+            Q_pred.col(i) = Q_prev.col(i) - dt / grid_dx *
+                (flux_prev.col(i + 1) - flux_prev.col(i)) + dt * source_prev.col(i);
+        Q_pred.col(n - 1) = Q_pred.col(n - 2) * (A(n - 1) / A(n - 2));
 
+        flux_and_source(Q_pred, flux_pred, source_pred);
+        Eigen::MatrixXd Q_new = Q_prev;
+        for (int i = 1; i < n - 1; ++i)
+            Q_new.col(i) = 0.5 * (Q_prev.col(i) + Q_pred.col(i) - dt / grid_dx *
+                (flux_pred.col(i) - flux_pred.col(i - 1)) + dt * source_pred.col(i));
+        Q_new.col(n - 1) = Q_new.col(n - 2) * (A(n - 1) / A(n - 2));
 
-
-        residual = (Q_new - Q_prev).norm();
-
+        const double residual = (Q_new - Q_prev).norm() / Q_prev.norm();
+        if (!std::isfinite(residual))
+            throw std::runtime_error("MacCormack residual is not finite");
         if (residual < convergence)
-            conv = true;
-
-        Q_prev = Q_new;
+            return Q_new;
+        Q_prev.swap(Q_new);
     }
-
-    return Q_new;
+    throw std::runtime_error("MacCormack solver did not converge within 100000 steps");
 }
