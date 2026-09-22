@@ -86,6 +86,11 @@ int main() {
         {"leap_frog", leap_frog},
         {"lax_wendroff", lax_wendroff},
         {"lax", lax},
+        {"crank_nicolson", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
+            return scheme_theta(u0, CFL, nSteps, 0.5);
+        }},
+        {"scheme_2space_4time", scheme_2space_4time},
+        {"scheme_4space_2time", scheme_4space_2time},
     };
 
     std::filesystem::create_directories("results");
