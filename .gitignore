@@ -14,7 +14,7 @@ main_part_1
 # Simulation outputs
 *.csv
 *.dat
-
+*.png
 # Python
 .venv/
 __pycache__/
