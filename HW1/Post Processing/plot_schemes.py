@@ -5,7 +5,7 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 
-CFL = 1.0 # Change this to select the CFL to plot
+CFL = 0.5 # Change this to select the CFL to plot
 
 results_dir = os.path.join(os.path.dirname(__file__), "..", "results")
 pattern = re.compile(r"(.+)_CFL_([0-9.]+)\.dat$")

@@ -18,6 +18,12 @@ struct TimeParams
     int nSteps;
 };
 
+enum class OutletType
+{
+    Supersonic,
+    Subsonic
+};
+
 Mesh make_mesh(int n, double xMin, double xMax);
 
 double nozzle_area(double x);
@@ -46,4 +52,6 @@ Eigen::VectorXd scheme_2space_4time(const Eigen::VectorXd &u0, double CFL, int n
 Eigen::VectorXd scheme_4space_2time(const Eigen::VectorXd &u0, double CFL, int nSteps);
 Eigen::VectorXd scheme_theta(const Eigen::VectorXd &u0, double CFL, int nSteps, double theta = 0.5);
 
-Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach=1.25, double convergence = 1e-6);
+
+void apply_boundary_conditions(Eigen::MatrixXd& Q, const Eigen::VectorXd& A, double gamma, double R, double T_in, double P_in, double Mach_in, OutletType outlet_type, double back_pressure_ratio = 1.9);
+Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach, double convergence, OutletType outlet_type, double back_pressure_ratio = 1.9);

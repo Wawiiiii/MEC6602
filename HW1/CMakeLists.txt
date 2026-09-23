@@ -26,3 +26,7 @@ target_link_libraries(main_cfl_study PRIVATE schemes)
 
 add_executable(main_convergence main_convergence.cpp)
 target_link_libraries(main_convergence PRIVATE schemes)
+
+
+add_executable(main_euler1d_MacCormack main_euler1d_MacCormack.cpp)
+target_link_libraries(main_euler1d_MacCormack PRIVATE schemes)

@@ -216,10 +216,92 @@ double der_nozzle_area(double x)
     return 0.2776 * sech * sech;
 }
 
-Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach, double convergence)
+
+
+void apply_boundary_conditions(
+    Eigen::MatrixXd& Q,
+    const Eigen::VectorXd& A,
+    double gamma,
+    double R,
+    double T_in,
+    double P_in,
+    double Mach_in,
+    OutletType outlet_type,
+    double back_pressure_ratio)
 {
-    if (CFL <= 0.0 || dx <= 0.0 || Mach <= 0.0 || convergence <= 0.0 || dx > 5.0)
-        throw std::invalid_argument("CFL, dx, Mach and convergence must be positive, with dx <= 5");
+    // ----- Inlet supersonic -----
+    double c_in = std::sqrt(gamma * R * T_in);
+    double u_in = Mach_in * c_in;
+    double rho_in = P_in / (R * T_in);
+    double e_in = R * T_in / (gamma - 1.0);
+    double E_in = e_in + 0.5 * u_in * u_in;
+
+    Q(0, 0) = rho_in * A(0);
+    Q(1, 0) = rho_in * u_in * A(0);
+    Q(2, 0) = rho_in * E_in * A(0);
+
+    // ----- Outlet -----
+    int N = Q.cols() - 1;
+
+    if (outlet_type == OutletType::Supersonic)
+    {
+        // Extrapolation primitive
+        Q.col(N) = Q.col(N - 1) * A(N) / A(N - 1);
+    }
+    else
+    {
+        // intérieur
+        double rho_i = Q(0, N - 1) / A(N - 1);
+        double u_i   = Q(1, N - 1) / Q(0, N - 1);
+        double E_i   = Q(2, N - 1) / Q(0, N - 1);
+
+        double P_i =
+            (gamma - 1.0) * rho_i *
+            (E_i - 0.5 * u_i * u_i);
+
+        double c_i = std::sqrt(gamma * P_i / rho_i);
+
+        // Pression imposée
+        double P_L = back_pressure_ratio * P_in;
+
+        // Hypothèse isentropique à la sortie
+        double rho_L =
+            rho_i * std::pow(P_L / P_i, 1.0 / gamma);
+
+        double c_L =
+            std::sqrt(gamma * P_L / rho_L);
+
+        // Invariant venant de l'intérieur
+        double R1 = u_i + 2.0 * c_i / (gamma - 1.0);
+
+        // Reconstruction
+        double u_L =
+            R1 - 2.0 * c_L / (gamma - 1.0);
+
+        double e_L = P_L / ((gamma - 1.0) * rho_L);
+        double E_L = e_L + 0.5 * u_L * u_L;
+
+        Q(0, N) = rho_L * A(N);
+        Q(1, N) = rho_L * u_L * A(N);
+        Q(2, N) = rho_L * E_L * A(N);
+    }
+}
+
+
+
+Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach, double convergence, OutletType outlet_type, double back_pressure_ratio)
+{
+    if (CFL <= 0.0 || CFL >= 1.0 ||
+        dx <= 0.0 ||
+        Mach <= 0.0 ||
+        convergence <= 0.0 ||
+        dx > 5.0)
+    {
+        throw std::invalid_argument(
+            "Require 0 < CFL < 1, dx > 0, Mach > 0 and convergence > 0"
+        );
+    }
+
 
     (void)u; // Kept in the public signature; inlet velocity is set by Mach below.
     const double gamma = 1.4;
@@ -273,15 +355,17 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
         Eigen::MatrixXd Q_pred = Q_prev;
         for (int i = 1; i < n - 1; ++i)
             Q_pred.col(i) = Q_prev.col(i) - dt / grid_dx *
-                (flux_prev.col(i + 1) - flux_prev.col(i)) + dt * source_prev.col(i);
-        Q_pred.col(n - 1) = Q_pred.col(n - 2) * (A(n - 1) / A(n - 2));
+                (flux_prev.col(i) - flux_prev.col(i-1)) + dt * source_prev.col(i);
+
+        apply_boundary_conditions(Q_pred, A, gamma, R, T, P, Mach, outlet_type, back_pressure_ratio);
 
         flux_and_source(Q_pred, flux_pred, source_pred);
         Eigen::MatrixXd Q_new = Q_prev;
         for (int i = 1; i < n - 1; ++i)
             Q_new.col(i) = 0.5 * (Q_prev.col(i) + Q_pred.col(i) - dt / grid_dx *
-                (flux_pred.col(i) - flux_pred.col(i - 1)) + dt * source_pred.col(i));
-        Q_new.col(n - 1) = Q_new.col(n - 2) * (A(n - 1) / A(n - 2));
+                (flux_pred.col(i + 1) - flux_pred.col(i)) + dt * source_pred.col(i));
+
+        apply_boundary_conditions(Q_new, A, gamma, R, T, P, Mach, outlet_type, back_pressure_ratio);
 
         const double residual = (Q_new - Q_prev).norm() / Q_prev.norm();
         if (!std::isfinite(residual))
