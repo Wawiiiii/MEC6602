@@ -1,4 +1,4 @@
-"""Plot results from main_euler1d_MacCormack, run from HW1.
+"""Plot results from the 1D Euler solvers, run from HW1.
 
 Save each field to a separate PNG. Use --no-show to skip opening windows.
 """
@@ -17,8 +17,10 @@ def main():
 
     results_dir = Path(__file__).resolve().parent.parent / "Euler_1D_results"
     cases = [
-        ("supersonic_MacCormack.dat", "Supersonic outlet", "-"),
-        ("subsonic_MacCormack.dat", "Subsonic outlet", "--"),
+        ("supersonic_MacCormack.dat", "Supersonic outlet, MacCormack", "-"),
+        ("subsonic_MacCormack.dat", "Subsonic outlet, MacCormack", "--"),
+        ("supersonic_Implicit.dat", "Supersonic outlet, Beam-Warming", ":"),
+        ("subsonic_Implicit.dat", "Subsonic outlet, Beam-Warming", "-."),
     ]
     fields = [
         (1, "area", "Cross-sectional area", r"$A$ (m$^2$)"),
@@ -41,7 +43,7 @@ def main():
         loaded_cases.append((data, label, linestyle))
 
     if not loaded_cases:
-        raise SystemExit("No results to plot. Run main_euler1d_MacCormack from HW1.")
+        raise SystemExit("No results to plot. Run main_euler1d_MacCormack or main_euler1d_implicit from HW1.")
 
     figures = []
     for column, name, title, ylabel in fields:
@@ -49,7 +51,7 @@ def main():
         figures.append(fig)
         for data, label, linestyle in loaded_cases:
             ax.plot(data[:, 0], data[:, column], linestyle, label=label)
-        ax.set_title(f"1D Euler — MacCormack scheme\n{title}")
+        ax.set_title(f"1D Euler — MacCormack and Beam-Warming schemes\n{title}")
         ax.set_xlabel("x (m)")
         ax.set_ylabel(ylabel)
         ax.grid(True)
@@ -57,7 +59,7 @@ def main():
         if name == "mach":
             ax.axhline(1.0, color="gray", linestyle=":", linewidth=1)
         fig.tight_layout()
-        output = results_dir / f"euler1d_{name}_MacCormack.png"
+        output = results_dir / f"euler1d_{name}_comparison.png"
         fig.savefig(output, dpi=200)
         print(f"Figure saved: {output}")
     if not args.no_show:

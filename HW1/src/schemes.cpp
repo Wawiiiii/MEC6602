@@ -261,8 +261,15 @@ void apply_boundary_conditions(
 
         double c_i = std::sqrt(gamma * P_i / rho_i);
 
-        // Pression imposée
-        double P_L = back_pressure_ratio * P_in;
+        // The slides impose the downstream static pressure at a subsonic exit.
+        // Here back_pressure_ratio means P_B / P_in (static inlet pressure).
+        const double P0_in = P_in * std::pow(
+            1.0 + 0.5 * (gamma - 1.0) * Mach_in * Mach_in,
+            gamma / (gamma - 1.0));
+        const double P_L = back_pressure_ratio * P_in;
+        if (!(P_L > 0.0) || !std::isfinite(P_L) || P_L >= P0_in)
+            throw std::invalid_argument(
+                "Subsonic-outlet back pressure must satisfy 0 < P_B < inlet total pressure");
 
         // Hypothèse isentropique à la sortie
         double rho_L =
@@ -375,4 +382,136 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
         Q_prev.swap(Q_new);
     }
     throw std::runtime_error("MacCormack solver did not converge within 100000 steps");
+}
+
+Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
+                                 double convergence, OutletType outlet_type,
+                                 double back_pressure_ratio)
+{
+    if (CFL <= 0.0 || CFL >= 1.0 || dx <= 0.0 || Mach <= 0.0 ||
+        convergence <= 0.0 || dx > 5.0)
+        throw std::invalid_argument("Require 0 < CFL < 1, dx > 0, Mach > 0 and convergence > 0");
+    (void)u;
+
+    constexpr double gamma = 1.4, R = 287.0, T = 300.0, P = 101325.0;
+    constexpr double theta = 1.0;
+    constexpr double eps_explicit = 0.02; // epsilon_e < 0.125 (course slides)
+    constexpr double eps_implicit = 0.05; // epsilon_i > 2 epsilon_e
+    const double c = std::sqrt(gamma * R * T);
+    const double velocity = Mach * c;
+    const double rho = P / (R * T);
+    const double energy = R * T / (gamma - 1.0) + 0.5 * velocity * velocity;
+    const int n = static_cast<int>(10.0 / dx) + 1;
+    const double grid_dx = 10.0 / (n - 1);
+    const Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(n, 0.0, 10.0);
+    const Eigen::VectorXd area = x.unaryExpr([](double xi) { return nozzle_area(xi); });
+    const Eigen::VectorXd darea = x.unaryExpr([](double xi) { return der_nozzle_area(xi); });
+
+    Eigen::MatrixXd Q(3, n);
+    for (int i = 0; i < n; ++i) Q.col(i) << rho * area(i), rho * velocity * area(i), rho * energy * area(i);
+    apply_boundary_conditions(Q, area, gamma, R, T, P, Mach, outlet_type, back_pressure_ratio);
+
+    using Block = Eigen::Matrix3d;
+    const int ni = n - 2;
+    auto flux_source_jacobian = [&](int i, Eigen::Vector3d& flux, Eigen::Vector3d& source, Block& jac) {
+        const double r = Q(0,i) / area(i), v = Q(1,i) / Q(0,i), E = Q(2,i) / Q(0,i);
+        const double p = (gamma - 1.0) * r * (E - 0.5*v*v);
+        if (!(r > 0.0 && p > 0.0) || !std::isfinite(p))
+            throw std::runtime_error("Implicit Beam-Warming step produced a nonphysical state");
+        const double H = (Q(2,i) + p*area(i)) / Q(0,i);
+        flux << Q(1,i), Q(1,i)*v + p*area(i), v*(Q(2,i) + p*area(i));
+        source << 0.0, p*darea(i), 0.0;
+        jac << 0.0, 1.0, 0.0,
+               0.5*(gamma-3.0)*v*v, (3.0-gamma)*v, gamma-1.0,
+               v*(0.5*(gamma-1.0)*v*v-H), H-(gamma-1.0)*v*v, gamma*v;
+    };
+
+    for (int step = 0; step < 100000; ++step) {
+        double max_speed = 0.0;
+        for (int i = 0; i < n; ++i) {
+            const double r = Q(0,i)/area(i), v = Q(1,i)/Q(0,i);
+            const double p = (gamma-1.0)*r*(Q(2,i)/Q(0,i)-0.5*v*v);
+            if (r <= 0.0 || p <= 0.0 || !std::isfinite(p)) throw std::runtime_error("Nonphysical Euler state");
+            max_speed = std::max(max_speed, std::abs(v)+std::sqrt(gamma*p/r));
+        }
+        const double dt = CFL * grid_dx / max_speed;
+        std::vector<Block> lower(ni, Block::Zero()), diagonal(ni), upper(ni, Block::Zero());
+        std::vector<Eigen::Vector3d> rhs(ni);
+        double rhs_norm_squared = 0.0;
+        for (int j = 0; j < ni; ++j) {
+            const int i = j+1;
+            Eigen::Vector3d Fm, Fi, Fp, Sm, Si, Sp;
+            Block Jm, Ji, Jp;
+            flux_source_jacobian(i-1,Fm,Sm,Jm); flux_source_jacobian(i,Fi,Si,Ji); flux_source_jacobian(i+1,Fp,Sp,Jp);
+            const Eigen::Vector3d residual = (Fp-Fm)/(2.0*grid_dx) - Si;
+            Eigen::Vector3d fourth_difference = Eigen::Vector3d::Zero();
+            if (i >= 2 && i + 2 < n)
+                fourth_difference = Q.col(i-2) - 4.0*Q.col(i-1) + 6.0*Q.col(i)
+                    - 4.0*Q.col(i+1) + Q.col(i+2);
+            // Convert epsilon_e to a rate using the cell crossing time dx/lambda,
+            // then multiply by dt as required by the course formula.
+            rhs[j] = -dt*residual
+                - eps_explicit*(dt*max_speed/grid_dx)*fourth_difference;
+            rhs_norm_squared += rhs[j].squaredNorm();
+            diagonal[j] = Block::Identity() + 2.0*eps_implicit*Block::Identity();
+            lower[j] = -eps_implicit*Block::Identity(); upper[j] = -eps_implicit*Block::Identity();
+            upper[j] += theta*dt/(2.0*grid_dx)*Ji;
+            lower[j] -= theta*dt/(2.0*grid_dx)*Ji;
+        }
+        // The correction can be artificially small after positivity damping.
+        // Test the discrete Beam-Warming equation itself before declaring convergence.
+        if (std::sqrt(rhs_norm_squared) / Q.norm() < convergence) return Q;
+        // Fixed boundary increments are zero; remove their couplings from the system.
+        lower[0].setZero(); upper[ni-1].setZero();
+        std::vector<Block> cprime(ni);
+        std::vector<Eigen::Vector3d> dprime(ni), correction(ni);
+        Eigen::PartialPivLU<Block> first_solver(diagonal[0]);
+        cprime[0] = first_solver.solve(upper[0]);
+        dprime[0] = first_solver.solve(rhs[0]);
+        for (int j = 1; j < ni; ++j) {
+            const Block pivot = diagonal[j] - lower[j]*cprime[j-1];
+            Eigen::PartialPivLU<Block> solver(pivot);
+            if (j + 1 < ni)
+                cprime[j] = solver.solve(upper[j]);
+            else
+                cprime[j].setZero();
+            dprime[j] = solver.solve(rhs[j]-lower[j]*dprime[j-1]);
+        }
+        correction[ni-1] = dprime[ni-1];
+        for (int j = ni-2; j >= 0; --j) correction[j] = dprime[j]-cprime[j]*correction[j+1];
+        Eigen::MatrixXd Qnew;
+        double relaxation = 1.0;
+        bool physical = false;
+        Eigen::Index bad_cell = -1;
+        double bad_density = 0.0, bad_pressure = 0.0;
+        for (int attempt = 0; attempt < 60; ++attempt) {
+            Qnew = Q;
+            for (int j = 0; j < ni; ++j) Qnew.col(j+1) += relaxation*correction[j];
+            apply_boundary_conditions(Qnew, area, gamma, R, T, P, Mach, outlet_type, back_pressure_ratio);
+            physical = true;
+            for (int i = 1; i < n; ++i) {
+                const double r = Qnew(0,i)/area(i), v = Qnew(1,i)/Qnew(0,i);
+                const double p = (gamma-1.0)*r*(Qnew(2,i)/Qnew(0,i)-0.5*v*v);
+                if (!(r > 0.0 && p > 0.0) || !std::isfinite(r) || !std::isfinite(v) || !std::isfinite(p)) {
+                    physical = false;
+                    bad_cell = i;
+                    bad_density = r;
+                    bad_pressure = p;
+                    break;
+                }
+            }
+            if (physical) break;
+            relaxation *= 0.5;
+        }
+        if (!physical) {
+            throw std::runtime_error("Beam-Warming correction could not preserve a physical state at iteration "
+                + std::to_string(step) + ", cell " + std::to_string(bad_cell)
+                + " (rho=" + std::to_string(bad_density)
+                + ", p=" + std::to_string(bad_pressure) + ")");
+        }
+        const double update = (Qnew-Q).norm()/Q.norm();
+        if (!std::isfinite(update)) throw std::runtime_error("Implicit update is not finite");
+        Q.swap(Qnew);
+    }
+    throw std::runtime_error("Implicit Beam-Warming solver did not converge within 100000 steps");
 }
