@@ -5,9 +5,11 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 
-CFL = 0.5 # Change this to select the CFL to plot
+CFL = 1.25 # Change this to select the CFL to plot
 
 results_dir = os.path.join(os.path.dirname(__file__), "..", "results")
+output_dir = os.path.join(os.path.dirname(__file__), "..", "schemes_plots")
+os.makedirs(output_dir, exist_ok=True)
 pattern = re.compile(r"(.+)_CFL_([0-9.]+)\.dat$")
 
 cfl_text = f"{CFL:.2f}"
@@ -38,4 +40,7 @@ for filepath in sorted(glob.glob(os.path.join(results_dir, f"*_CFL_{cfl_text}.da
     plt.title(f"{scheme}, CFL = {cfl_text}")
     plt.grid(True)
 
-plt.show()
+    output = os.path.join(output_dir, f"{scheme}_CFL_{cfl_text}.png")
+    plt.savefig(output, dpi=200, bbox_inches="tight")
+    plt.close()
+    print(f"Figure saved: {output}")

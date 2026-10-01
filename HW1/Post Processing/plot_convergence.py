@@ -5,7 +5,11 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 
-results_dir = os.path.join(os.path.dirname(__file__), "..", "results_convergence")
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_dir = os.path.abspath(os.path.join(script_dir, "..", ".."))
+results_dir = os.path.join(project_dir, "results_convergence")
+output_dir = os.path.join(project_dir, "convergence_plots")
+os.makedirs(output_dir, exist_ok=True)
 pattern = re.compile(r"space_(.+)\.dat$")
 
 # Nominal spatial order per scheme (see the homework's theory table).
@@ -50,5 +54,9 @@ for filepath in sorted(glob.glob(os.path.join(results_dir, "space_*.dat"))):
     plt.title(f"{scheme}: spatial convergence")
     plt.grid(True)
     plt.legend()
-
-plt.show()
+    plt.savefig(
+        os.path.join(output_dir, f"{scheme}.png"),
+        dpi=200,
+        bbox_inches="tight"
+    )
+    plt.close()

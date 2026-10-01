@@ -150,27 +150,44 @@ Eigen::VectorXd scheme_2space_4time(const Eigen::VectorXd& u0, double CFL, int n
 
 Eigen::VectorXd scheme_4space_2time(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
-    Eigen::Index m = u0.size() - 4;
+    const Eigen::Index n = u0.size();
+    const Eigen::Index m = n - 4;
+
     Eigen::VectorXd u_current = u0;
 
-    const double c1 = CFL / 12.0;
-    const double c2 = CFL * CFL / 24.0;
+    const double alpha = CFL / 24.0;
 
-    for (int step = 0; step < nSteps; ++step) {
-        Eigen::VectorXd u_next = u_current;
+    // A * u^(n+1) = b
+    Eigen::MatrixXd A = Eigen::MatrixXd::Identity(n, n);
 
-        u_next.segment(2, m) = u_current.segment(2, m)
-            - c1 * (u_current.head(m)
-                    - 8.0 * u_current.segment(1, m)
-                    + 8.0 * u_current.segment(3, m)
-                    - u_current.tail(m))
-            + c2 * (-u_current.tail(m)
-                    + 16.0 * u_current.segment(3, m)
-                    - 30.0 * u_current.segment(2, m)
-                    + 16.0 * u_current.segment(1, m)
-                    - u_current.head(m));
+    // Interior nodes: j = 2, ..., n-3
+    for (Eigen::Index j = 2; j < n - 2; ++j)
+    {
+        A(j, j - 2) =  alpha;
+        A(j, j - 1) = -8.0 * alpha;
+        A(j, j)     =  1.0;
+        A(j, j + 1) =  8.0 * alpha;
+        A(j, j + 2) = -alpha;
+    }
 
-        u_current = u_next;
+    // A is constant, so factorize only once
+    Eigen::PartialPivLU<Eigen::MatrixXd> solver(A);
+
+    for (int step = 0; step < nSteps; ++step)
+    {
+        Eigen::VectorXd b = u_current;
+
+        b.segment(2, m) =
+            u_current.segment(2, m)
+            - alpha *
+            (
+                u_current.head(m)
+                - 8.0 * u_current.segment(1, m)
+                + 8.0 * u_current.segment(3, m)
+                - u_current.tail(m)
+            );
+
+        u_current = solver.solve(b);
     }
 
     return u_current;
