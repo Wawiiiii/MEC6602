@@ -1,6 +1,6 @@
 # Input for main_euler1d_MacCormack and main_euler1d_implicit.
 # Mesh: n points on x = 0..10 m (dx = 10/(n-1)).
-n = 301
+n = 201
 
 # Supersonic inlet and subsonic outlet condition.
 Mach_in = 1.25
@@ -9,7 +9,7 @@ back_pressure_ratio = 1.9
 # Each solver uses its own convergence metric and tolerance.
 tolerance_MacCormack = 1e-8
 tolerance_Implicit = 1e-8
-max_iterations = 100000
+max_iterations = 30000
 # Independent CFL/outlet cases run on separate threads. A single case is sequential.
 # 0 selects the available CPU threads; a positive value caps them.
 # Override for one run with: executable --threads N
@@ -18,4 +18,4 @@ parallel_workers = 0
 # MacCormack at CFL = 1.25 diverges for the default case; its residuals are saved.
 CFL_MacCormack = 0.25 0.50 0.75 1.00
 # Add 2.00 and higher values here for longer stability/convergence experiments.
-CFL_Implicit = 0.25 0.50 0.75 1.00 2.00 5.00 6.00
+CFL_Implicit = 1.00 2.00 5.00 6.00 8.00 10.00

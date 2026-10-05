@@ -441,8 +441,8 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
 
     constexpr double gamma = 1.4, R = 287.0, T = 300.0, P = 101325.0;
     constexpr double theta = 1.0;
-    constexpr double eps_explicit = 0.04; // epsilon_e < 0.125 (course slides)
-    constexpr double eps_implicit = 0.09; // epsilon_i > 2 epsilon_e
+    constexpr double eps_explicit = 0.085; // epsilon_e < 0.125 (course slides)
+    constexpr double eps_implicit = 0.2; // epsilon_i > 2 epsilon_e
     const double c = std::sqrt(gamma * R * T);
     const double velocity = Mach * c;
     const double rho = P / (R * T);
