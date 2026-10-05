@@ -55,5 +55,13 @@ Eigen::VectorXd scheme_theta(const Eigen::VectorXd &u0, double CFL, int nSteps, 
 
 // back_pressure_ratio is P_B / P_in, with P_in the static inlet pressure.
 void apply_boundary_conditions(Eigen::MatrixXd& Q, const Eigen::VectorXd& A, double gamma, double R, double T_in, double P_in, double Mach_in, OutletType outlet_type, double back_pressure_ratio = 1.9);
-Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach, double convergence, OutletType outlet_type, double back_pressure_ratio = 1.9);
-Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach, double convergence, OutletType outlet_type, double back_pressure_ratio = 1.9);
+Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach,
+                                    double convergence, OutletType outlet_type,
+                                    double back_pressure_ratio = 1.9,
+                                    std::vector<double>* residual_history = nullptr,
+                                    int max_iterations = 100000);
+Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
+                                 double convergence, OutletType outlet_type,
+                                 double back_pressure_ratio = 1.9,
+                                 std::vector<double>* residual_history = nullptr,
+                                 int max_iterations = 100000);

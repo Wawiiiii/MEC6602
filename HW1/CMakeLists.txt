@@ -3,6 +3,9 @@ project(mec6602_hw1 CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(MSVC)
+    add_compile_options(/EHsc)
+endif()
 
 # Eigen is header-only. Try to find an installed package first; otherwise
 # fall back to EIGEN_DIR, which you can point at your local install, e.g.:
@@ -25,11 +28,16 @@ add_executable(main_cfl_study main_cfl_study.cpp)
 target_link_libraries(main_cfl_study PRIVATE schemes)
 
 add_executable(main_convergence main_convergence.cpp)
-target_link_libraries(main_convergence PRIVATE schemes)
+find_package(Threads REQUIRED)
+target_link_libraries(main_convergence PRIVATE schemes Threads::Threads)
 
 
 add_executable(main_euler1d_MacCormack main_euler1d_MacCormack.cpp)
-target_link_libraries(main_euler1d_MacCormack PRIVATE schemes)
+target_link_libraries(main_euler1d_MacCormack PRIVATE schemes Threads::Threads)
+target_compile_definitions(main_euler1d_MacCormack PRIVATE
+    "HW1_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")
 
 add_executable(main_euler1d_implicit main_euler1d_implicit.cpp)
-target_link_libraries(main_euler1d_implicit PRIVATE schemes)
+target_link_libraries(main_euler1d_implicit PRIVATE schemes Threads::Threads)
+target_compile_definitions(main_euler1d_implicit PRIVATE
+    "HW1_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\"")

@@ -1,4 +1,4 @@
-"""Trace une figure par schéma avec les cinq courbes CFL superposées.
+"""Trace une figure par schéma avec les courbes CFL disponibles superposées.
 
 Utilisation : python "HW1/Post Processing/plot_schemes_by_cfl.py"
 Les données sont lues dans HW1/results et les PNG sont créés dans
@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-CFL_VALUES = (0.25, 0.50, 0.75, 1.00, 1.25)
 FILENAME = re.compile(r"(.+)_CFL_(\d+\.\d{2})\.dat$")
 DIVERGENCE_LIMIT = 1e6
 
@@ -31,22 +30,19 @@ def main():
     if not args.results_dir.is_dir():
         parser.error(f"Dossier de données introuvable : {args.results_dir}")
 
-    schemes = sorted({
-        match.group(1)
-        for path in args.results_dir.glob("*_CFL_*.dat")
-        if (match := FILENAME.fullmatch(path.name))
-    })
-    if not schemes:
+    files_by_scheme = {}
+    for path in args.results_dir.glob("*_CFL_*.dat"):
+        match = FILENAME.fullmatch(path.name)
+        if match:
+            files_by_scheme.setdefault(match.group(1), []).append(
+                (float(match.group(2)), path))
+    if not files_by_scheme:
         parser.error(f"Aucun fichier *_CFL_*.dat dans {args.results_dir}")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    for scheme in schemes:
+    for scheme, files in sorted(files_by_scheme.items()):
         curves = []
-        for cfl in CFL_VALUES:
-            path = args.results_dir / f"{scheme}_CFL_{cfl:.2f}.dat"
-            if not path.is_file():
-                print(f"Fichier absent : {path}")
-                continue
+        for cfl, path in sorted(files):
             data = np.loadtxt(path, comments="#", ndmin=2)
             if data.shape[1] < 2:
                 raise ValueError(f"Deux colonnes x et u attendues dans {path}")
@@ -85,11 +81,11 @@ def main():
             ax.plot(x, u, label=label, linewidth=1.5,
                     zorder=2 if diverged else 3)
 
-        ax.set(xlabel="x", ylabel="u", title=f"{scheme} — comparaison des CFL")
+        ax.set(xlabel="x", ylabel="u", title=f"{scheme} — CFL comparison")
         ax.grid(True, alpha=0.3)
         ax.legend()
         if any(diverged for _, _, _, diverged in curves):
-            ax.text(0.01, 0.01, "Valeurs hors échelle masquées",
+            ax.text(0.01, 0.01, "Out of scale values are not displayed",
                     transform=ax.transAxes, fontsize=9, va="bottom")
         fig.tight_layout()
         output = args.output_dir / f"{scheme}_cfl_comparison.png"

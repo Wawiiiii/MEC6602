@@ -1,5 +1,8 @@
 #include "schemes.h"
+#include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -7,8 +10,11 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 constexpr double PI = 3.14159265358979323846;
@@ -28,6 +34,7 @@ struct ConvergenceConfig {
     // fixed dt, sweep over n (mesh points) to isolate spatial error
     double dt = 0.0005;
     std::vector<int> n_values = {51, 101, 201, 401, 801, 1601};
+    int threads = 0; // 0 uses all available CPU threads
 };
 
 ConvergenceConfig read_convergence_config(const std::string& filename) {
@@ -76,6 +83,8 @@ ConvergenceConfig read_convergence_config(const std::string& filename) {
             while (value_stream >> value) {
                 config.n_values.push_back(value);
             }
+        } else if (key == "threads") {
+            value_stream >> config.threads;
         }
     }
 
@@ -181,8 +190,14 @@ int main() {
         {"leap_frog", leap_frog},
         {"lax_wendroff", lax_wendroff},
         {"lax", lax},
-        {"crank_nicolson", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
+        {"theta_0_0", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
+            return scheme_theta(u0, CFL, nSteps, 0.0);
+        }},
+        {"theta_0_5", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
             return scheme_theta(u0, CFL, nSteps, 0.5);
+        }},
+        {"theta_1_0", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
+            return scheme_theta(u0, CFL, nSteps, 1.0);
         }},
         {"scheme_2space_4time", scheme_2space_4time},
         {"scheme_4space_2time", scheme_4space_2time},
@@ -190,8 +205,15 @@ int main() {
 
     std::filesystem::create_directories("results_convergence");
 
-    std::vector<double> dx_values;
-    std::map<std::string, std::vector<double>> errors;
+    struct Case {
+        double dx;
+        double CFL;
+        int nSteps;
+        Eigen::VectorXd initial;
+        Eigen::VectorXd exact;
+    };
+    std::vector<Case> cases;
+    cases.reserve(config.n_values.size());
 
     for (int n : config.n_values) {
         Mesh mesh = make_mesh(n, 0.0, PI);
@@ -210,15 +232,59 @@ int main() {
                       << ") -- conditionally-stable schemes will diverge here.\n";
         }
 
-        dx_values.push_back(mesh.dx);
-
-        for (const auto& [name, scheme] : schemes) {
-            Eigen::VectorXd u = scheme(ic.u0, CFL, nSteps);
-            double error = l2_error(u, exact_ic.u0, mesh.dx);
-            errors[name].push_back(error);
-        }
+        cases.push_back({mesh.dx, CFL, nSteps, std::move(ic.u0), std::move(exact_ic.u0)});
     }
 
+    // Each (mesh, scheme) simulation is independent. Write each result to its
+    // own slot, then format the tables on the main thread in the original order.
+    const std::vector<std::pair<std::string,
+        std::function<Eigen::VectorXd(const Eigen::VectorXd&, double, int)>>> scheme_list(
+            schemes.begin(), schemes.end());
+    const std::size_t job_count = cases.size() * scheme_list.size();
+    std::vector<std::vector<double>> error_grid(
+        scheme_list.size(), std::vector<double>(cases.size()));
+    std::atomic<std::size_t> next_job{0};
+    std::atomic<bool> failed{false};
+    std::exception_ptr failure;
+    std::mutex failure_mutex;
+    const unsigned int available = std::max(1u, std::thread::hardware_concurrency());
+    const unsigned int requested = config.threads > 0
+        ? static_cast<unsigned int>(config.threads) : available;
+    const std::size_t worker_count = std::min(job_count,
+        static_cast<std::size_t>(requested));
+
+    auto worker = [&]() {
+        while (!failed) {
+            const std::size_t job = next_job.fetch_add(1);
+            if (job >= job_count) break;
+            // Start with larger meshes to keep the final workers busy.
+            const std::size_t case_index = cases.size() - 1 - job / scheme_list.size();
+            const std::size_t scheme_index = job % scheme_list.size();
+            const Case& test = cases[case_index];
+            try {
+                Eigen::VectorXd u = scheme_list[scheme_index].second(
+                    test.initial, test.CFL, test.nSteps);
+                error_grid[scheme_index][case_index] = l2_error(u, test.exact, test.dx);
+            } catch (...) {
+                std::lock_guard<std::mutex> lock(failure_mutex);
+                if (!failure) failure = std::current_exception();
+                failed = true;
+            }
+        }
+    };
+
+    std::vector<std::thread> workers;
+    workers.reserve(worker_count);
+    for (std::size_t i = 0; i < worker_count; ++i) workers.emplace_back(worker);
+    for (auto& thread : workers) thread.join();
+    if (failure) std::rethrow_exception(failure);
+
+    std::vector<double> dx_values;
+    dx_values.reserve(cases.size());
+    for (const Case& test : cases) dx_values.push_back(test.dx);
+    std::map<std::string, std::vector<double>> errors;
+    for (std::size_t i = 0; i < scheme_list.size(); ++i)
+        errors.emplace(scheme_list[i].first, std::move(error_grid[i]));
     report_convergence(dx_values, errors);
 
     return 0;

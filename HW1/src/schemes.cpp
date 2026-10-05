@@ -158,20 +158,27 @@ Eigen::VectorXd scheme_4space_2time(const Eigen::VectorXd& u0, double CFL, int n
     const double alpha = CFL / 24.0;
 
     // A * u^(n+1) = b
-    Eigen::MatrixXd A = Eigen::MatrixXd::Identity(n, n);
+    Eigen::SparseMatrix<double> A(n, n);
+    std::vector<Eigen::Triplet<double>> entries;
+    entries.reserve(5 * n);
 
     // Interior nodes: j = 2, ..., n-3
-    for (Eigen::Index j = 2; j < n - 2; ++j)
-    {
-        A(j, j - 2) =  alpha;
-        A(j, j - 1) = -8.0 * alpha;
-        A(j, j)     =  1.0;
-        A(j, j + 1) =  8.0 * alpha;
-        A(j, j + 2) = -alpha;
+    for (Eigen::Index j = 0; j < n; ++j) {
+        entries.emplace_back(j, j, 1.0);
+        if (j >= 2 && j < n - 2) {
+            entries.emplace_back(j, j - 2, alpha);
+            entries.emplace_back(j, j - 1, -8.0 * alpha);
+            entries.emplace_back(j, j + 1, 8.0 * alpha);
+            entries.emplace_back(j, j + 2, -alpha);
+        }
     }
+    A.setFromTriplets(entries.begin(), entries.end());
 
     // A is constant, so factorize only once
-    Eigen::PartialPivLU<Eigen::MatrixXd> solver(A);
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+    solver.compute(A);
+    if (solver.info() != Eigen::Success)
+        throw std::runtime_error("scheme_4space_2time factorization failed");
 
     for (int step = 0; step < nSteps; ++step)
     {
@@ -203,11 +210,22 @@ Eigen::VectorXd scheme_theta(const Eigen::VectorXd& u0, double CFL,
     const double c_implicit = theta * CFL / 2.0;
     const double c_explicit = (1.0 - theta) * CFL / 2.0;
 
-    Eigen::MatrixXd A = Eigen::MatrixXd::Identity(n, n);
-    A.diagonal(1).tail(m).setConstant(c_implicit);
-    A.diagonal(-1).head(m).setConstant(-c_implicit);
+    Eigen::SparseMatrix<double> A(n, n);
+    std::vector<Eigen::Triplet<double>> entries;
+    entries.reserve(3 * n);
+    for (Eigen::Index j = 0; j < n; ++j) {
+        entries.emplace_back(j, j, 1.0);
+        if (j > 0 && j < n - 1) {
+            entries.emplace_back(j, j - 1, -c_implicit);
+            entries.emplace_back(j, j + 1, c_implicit);
+        }
+    }
+    A.setFromTriplets(entries.begin(), entries.end());
 
-    Eigen::PartialPivLU<Eigen::MatrixXd> solver(A);
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+    solver.compute(A);
+    if (solver.info() != Eigen::Success)
+        throw std::runtime_error("scheme_theta factorization failed");
 
     for (int step = 0; step < nSteps; ++step) {
         Eigen::VectorXd b = u_current;
@@ -313,18 +331,24 @@ void apply_boundary_conditions(
 
 
 
-Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach, double convergence, OutletType outlet_type, double back_pressure_ratio)
+Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach,
+                                    double convergence, OutletType outlet_type,
+                                    double back_pressure_ratio,
+                                    std::vector<double>* residual_history,
+                                    int max_iterations)
 {
-    if (CFL <= 0.0 || CFL >= 1.0 ||
+    if (CFL <= 0.0 || CFL > 1.25 ||
         dx <= 0.0 ||
         Mach <= 0.0 ||
         convergence <= 0.0 ||
-        dx > 5.0)
+        dx > 5.0 || max_iterations < 1)
     {
         throw std::invalid_argument(
-            "Require 0 < CFL < 1, dx > 0, Mach > 0 and convergence > 0"
+            "Require 0 < CFL <= 1.25, dx > 0, Mach > 0, convergence > 0 and max_iterations > 0"
         );
     }
+
+    if (residual_history) residual_history->clear();
 
 
     (void)u; // Kept in the public signature; inlet velocity is set by Mach below.
@@ -338,7 +362,7 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
     const double u_in = Mach * c;
     const double E = e + 0.5 * u_in * u_in;
 
-    int n = static_cast<int>(10.0 / dx) + 1;
+    int n = static_cast<int>(std::lround(10.0 / dx)) + 1;
     const double grid_dx = 10.0 / (n - 1);
     Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(n, 0, 10);
     Eigen::VectorXd A = x.unaryExpr([](double xi) { return nozzle_area(xi); });
@@ -372,7 +396,7 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
 
     Eigen::MatrixXd flux_prev(3, n), source_prev(3, n);
     Eigen::MatrixXd flux_pred(3, n), source_pred(3, n);
-    for (int step = 0; step < 100000; ++step) {
+    for (int step = 0; step < max_iterations; ++step) {
         const double max_speed = flux_and_source(Q_prev, flux_prev, source_prev);
         const double dt = CFL * grid_dx / max_speed;
 
@@ -394,31 +418,36 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
         const double residual = (Q_new - Q_prev).norm() / Q_prev.norm();
         if (!std::isfinite(residual))
             throw std::runtime_error("MacCormack residual is not finite");
+        if (residual_history) residual_history->push_back(residual);
         if (residual < convergence)
             return Q_new;
         Q_prev.swap(Q_new);
     }
-    throw std::runtime_error("MacCormack solver did not converge within 100000 steps");
+    throw std::runtime_error("MacCormack solver did not converge within "
+                             + std::to_string(max_iterations) + " steps");
 }
 
 Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
                                  double convergence, OutletType outlet_type,
-                                 double back_pressure_ratio)
+                                 double back_pressure_ratio,
+                                 std::vector<double>* residual_history,
+                                 int max_iterations)
 {
-    if (CFL <= 0.0 || CFL >= 1.0 || dx <= 0.0 || Mach <= 0.0 ||
-        convergence <= 0.0 || dx > 5.0)
-        throw std::invalid_argument("Require 0 < CFL < 1, dx > 0, Mach > 0 and convergence > 0");
+    if (CFL <= 0.0 || dx <= 0.0 || Mach <= 0.0 ||
+        convergence <= 0.0 || dx > 5.0 || max_iterations < 1)
+        throw std::invalid_argument("Require CFL > 0, dx > 0, Mach > 0, convergence > 0 and max_iterations > 0");
+    if (residual_history) residual_history->clear();
     (void)u;
 
     constexpr double gamma = 1.4, R = 287.0, T = 300.0, P = 101325.0;
     constexpr double theta = 1.0;
-    constexpr double eps_explicit = 0.02; // epsilon_e < 0.125 (course slides)
-    constexpr double eps_implicit = 0.05; // epsilon_i > 2 epsilon_e
+    constexpr double eps_explicit = 0.04; // epsilon_e < 0.125 (course slides)
+    constexpr double eps_implicit = 0.09; // epsilon_i > 2 epsilon_e
     const double c = std::sqrt(gamma * R * T);
     const double velocity = Mach * c;
     const double rho = P / (R * T);
     const double energy = R * T / (gamma - 1.0) + 0.5 * velocity * velocity;
-    const int n = static_cast<int>(10.0 / dx) + 1;
+    const int n = static_cast<int>(std::lround(10.0 / dx)) + 1;
     const double grid_dx = 10.0 / (n - 1);
     const Eigen::VectorXd x = Eigen::VectorXd::LinSpaced(n, 0.0, 10.0);
     const Eigen::VectorXd area = x.unaryExpr([](double xi) { return nozzle_area(xi); });
@@ -443,7 +472,10 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
                v*(0.5*(gamma-1.0)*v*v-H), H-(gamma-1.0)*v*v, gamma*v;
     };
 
-    for (int step = 0; step < 100000; ++step) {
+    std::vector<Eigen::Vector3d> flux(n), source(n), rhs(ni), dprime(ni), correction(ni);
+    std::vector<Block> jacobian(n), lower(ni), diagonal(ni), upper(ni), cprime(ni);
+
+    for (int step = 0; step < max_iterations; ++step) {
         double max_speed = 0.0;
         for (int i = 0; i < n; ++i) {
             const double r = Q(0,i)/area(i), v = Q(1,i)/Q(0,i);
@@ -452,36 +484,51 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
             max_speed = std::max(max_speed, std::abs(v)+std::sqrt(gamma*p/r));
         }
         const double dt = CFL * grid_dx / max_speed;
-        std::vector<Block> lower(ni, Block::Zero()), diagonal(ni), upper(ni, Block::Zero());
-        std::vector<Eigen::Vector3d> rhs(ni);
+        const double sigma_e = eps_explicit * dt * max_speed / grid_dx;
+        const double sigma_i = eps_implicit * dt * max_speed / grid_dx;
+        for (int i = 0; i < n; ++i)
+            flux_source_jacobian(i, flux[i], source[i], jacobian[i]);
         double rhs_norm_squared = 0.0;
         for (int j = 0; j < ni; ++j) {
             const int i = j+1;
-            Eigen::Vector3d Fm, Fi, Fp, Sm, Si, Sp;
-            Block Jm, Ji, Jp;
-            flux_source_jacobian(i-1,Fm,Sm,Jm); flux_source_jacobian(i,Fi,Si,Ji); flux_source_jacobian(i+1,Fp,Sp,Jp);
-            const Eigen::Vector3d residual = (Fp-Fm)/(2.0*grid_dx) - Si;
+            const Eigen::Vector3d residual =
+                (flux[i+1]-flux[i-1])/(2.0*grid_dx) - source[i];
             Eigen::Vector3d fourth_difference = Eigen::Vector3d::Zero();
             if (i >= 2 && i + 2 < n)
                 fourth_difference = Q.col(i-2) - 4.0*Q.col(i-1) + 6.0*Q.col(i)
                     - 4.0*Q.col(i+1) + Q.col(i+2);
             // Convert epsilon_e to a rate using the cell crossing time dx/lambda,
             // then multiply by dt as required by the course formula.
-            rhs[j] = -dt*residual
-                - eps_explicit*(dt*max_speed/grid_dx)*fourth_difference;
+
+                rhs[j] = -dt*residual
+                    - sigma_e*fourth_difference;
+
+                diagonal[j] = Block::Identity()
+                            + 2.0*sigma_i*Block::Identity();
+
+                lower[j] = -sigma_i*Block::Identity()
+                        - dt/(2.0*grid_dx)*jacobian[i-1];
+
+                upper[j] = -sigma_i*Block::Identity()
+                        + dt/(2.0*grid_dx)*jacobian[i+1];
+
+           // rhs[j] = -dt*residual
+           //     - eps_explicit*(dt*max_speed/grid_dx)*fourth_difference;
             rhs_norm_squared += rhs[j].squaredNorm();
-            diagonal[j] = Block::Identity() + 2.0*eps_implicit*Block::Identity();
-            lower[j] = -eps_implicit*Block::Identity(); upper[j] = -eps_implicit*Block::Identity();
-            upper[j] += theta*dt/(2.0*grid_dx)*Ji;
-            lower[j] -= theta*dt/(2.0*grid_dx)*Ji;
+           // diagonal[j] = Block::Identity() + 2.0*eps_implicit*Block::Identity();
+           // lower[j] = -eps_implicit*Block::Identity(); upper[j] = -eps_implicit*Block::Identity();
+           // upper[j] += theta*dt/(2.0*grid_dx)*jacobian[i];
+           // lower[j] -= theta*dt/(2.0*grid_dx)*jacobian[i];
         }
         // The correction can be artificially small after positivity damping.
         // Test the discrete Beam-Warming equation itself before declaring convergence.
-        if (std::sqrt(rhs_norm_squared) / Q.norm() < convergence) return Q;
+        const double equation_residual = std::sqrt(rhs_norm_squared) / Q.norm();
+        if (!std::isfinite(equation_residual))
+            throw std::runtime_error("Implicit Euler residual is not finite");
+        if (residual_history) residual_history->push_back(equation_residual);
+        if (equation_residual < convergence) return Q;
         // Fixed boundary increments are zero; remove their couplings from the system.
         lower[0].setZero(); upper[ni-1].setZero();
-        std::vector<Block> cprime(ni);
-        std::vector<Eigen::Vector3d> dprime(ni), correction(ni);
         Eigen::PartialPivLU<Block> first_solver(diagonal[0]);
         cprime[0] = first_solver.solve(upper[0]);
         dprime[0] = first_solver.solve(rhs[0]);
@@ -495,7 +542,8 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
             dprime[j] = solver.solve(rhs[j]-lower[j]*dprime[j-1]);
         }
         correction[ni-1] = dprime[ni-1];
-        for (int j = ni-2; j >= 0; --j) correction[j] = dprime[j]-cprime[j]*correction[j+1];
+        for (int j = ni-2; j >= 0; --j)
+            correction[j] = dprime[j]-cprime[j]*correction[j+1];
         Eigen::MatrixXd Qnew;
         double relaxation = 1.0;
         bool physical = false;
@@ -530,5 +578,6 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
         if (!std::isfinite(update)) throw std::runtime_error("Implicit update is not finite");
         Q.swap(Qnew);
     }
-    throw std::runtime_error("Implicit Beam-Warming solver did not converge within 100000 steps");
+    throw std::runtime_error("Implicit Beam-Warming solver did not converge within "
+                             + std::to_string(max_iterations) + " steps");
 }

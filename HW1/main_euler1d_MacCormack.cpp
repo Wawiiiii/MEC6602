@@ -1,11 +1,15 @@
 #include "schemes.h"
+#include "euler_study.h"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
+#include <vector>
 
 void write_euler_results(const std::filesystem::path& filename,
                          const Eigen::MatrixXd& Q)
@@ -40,70 +44,77 @@ void write_euler_results(const std::filesystem::path& filename,
     if (!file) {
         throw std::runtime_error("Could not write " + filename.string());
     }
-    std::cout << "Results saved to " << filename << '\n';
 }
 
-int main()
+int main(int argc, char** argv)
 {
     try
     {
-        const double CFL = 0.5;
-        const double dx = 0.05;
-        const double Mach = 1.25;
-        const double convergence = 1e-8;
-        const double u = 1;
-        // Like results/, this directory is relative to the working directory.
-        const std::filesystem::path results_dir = "Euler_1D_results";
-        std::filesystem::create_directories(results_dir);
+        const std::filesystem::path hw1_dir = HW1_SOURCE_DIR;
+        const auto config = euler_study::read_config(hw1_dir / "euler1d_input.txt");
+        const auto run_options = euler_study::parse_run_options(
+            argc, argv, config.cfl_maccormack, 1.25, config.parallel_workers);
+        const double dx = 10.0 / (config.n - 1);
+        constexpr double u = 1.0; // The solver sets inlet velocity from Mach_in.
+        const std::filesystem::path results_dir = hw1_dir / "Euler_1D_results";
+        const auto scheme_dir = results_dir / "MacCormack";
+        const auto profiles_dir = scheme_dir / "profiles";
+        const auto residuals_dir = scheme_dir / "residuals";
+        std::filesystem::create_directories(profiles_dir);
+        std::filesystem::create_directories(residuals_dir);
 
-        // -----------------------------
-        // Cas 1 : sortie supersonique
-        // -----------------------------
-        std::cout << "Running supersonic outlet case...\n";
-
-        Eigen::MatrixXd Q_supersonic =
-            euler1d_mackcormack(
-                CFL,
-                u,
-                dx,
-                Mach,
-                convergence,
-                OutletType::Supersonic
-            );
-
-        std::cout << "Supersonic case converged.\n";
-        write_euler_results(results_dir / "supersonic_MacCormack.dat", Q_supersonic);
-        std::cout << "Q size = "
-                  << Q_supersonic.rows()
-                  << " x "
-                  << Q_supersonic.cols()
-                  << "\n\n";
-
-        // -----------------------------
-        // Cas 2 : sortie subsonique
-        // -----------------------------
-        std::cout << "Running subsonic outlet case...\n";
-
-        const double back_pressure_ratio = 1.9;
-
-        Eigen::MatrixXd Q_subsonic =
-            euler1d_mackcormack(
-                CFL,
-                u,
-                dx,
-                Mach,
-                convergence,
-                OutletType::Subsonic,
-                back_pressure_ratio
-            );
-
-        std::cout << "Subsonic case converged.\n";
-        write_euler_results(results_dir / "subsonic_MacCormack.dat", Q_subsonic);
-        std::cout << "Q size = "
-                  << Q_subsonic.rows()
-                  << " x "
-                  << Q_subsonic.cols()
-                  << "\n";
+        struct Case { double cfl; OutletType outlet; std::string outlet_name; std::string stem; };
+        std::vector<Case> cases;
+        for (double cfl : run_options.cfl_values) {
+            for (OutletType outlet : {OutletType::Supersonic, OutletType::Subsonic}) {
+                const std::string outlet_name = outlet == OutletType::Supersonic
+                    ? "supersonic" : "subsonic";
+                cases.push_back({cfl, outlet, outlet_name,
+                    outlet_name + "_MacCormack_CFL_" + euler_study::cfl_label(cfl)});
+            }
+        }
+        std::vector<std::string> messages(cases.size());
+        std::vector<int> failed(cases.size(), 0);
+        std::cout << "Running with " << euler_study::effective_worker_count(
+            cases.size(), run_options.parallel_workers) << " thread(s).\n";
+        euler_study::parallel_for(cases.size(), run_options.parallel_workers,
+            [&](std::size_t index) {
+                const auto& run = cases[index];
+                const auto profile_path = profiles_dir / (run.stem + ".dat");
+                const auto residual_path = residuals_dir / ("residual_" + run.stem + ".dat");
+                std::filesystem::remove(profile_path);
+                std::filesystem::remove(residual_path);
+                std::vector<double> residuals;
+                std::ostringstream message;
+                message << "MacCormack, " << run.outlet_name << " outlet, CFL = "
+                        << run.cfl << ": ";
+                try {
+                    const Eigen::MatrixXd Q = euler1d_mackcormack(
+                        run.cfl, u, dx, config.mach_in,
+                        config.tolerance_maccormack, run.outlet,
+                        config.back_pressure_ratio, &residuals,
+                        config.max_iterations);
+                    write_euler_results(profile_path, Q);
+                    message << "profile saved";
+                } catch (const std::exception& e) {
+                    std::error_code ignored;
+                    std::filesystem::remove(profile_path, ignored);
+                    message << "failed: " << e.what();
+                    failed[index] = 1;
+                }
+                if (!residuals.empty()) {
+                    euler_study::write_residuals(residual_path, residuals,
+                                                 "relative_update");
+                    message << ", residuals saved";
+                }
+                messages[index] = message.str();
+            });
+        bool any_failed = false;
+        for (std::size_t i = 0; i < cases.size(); ++i) {
+            std::cout << messages[i] << '\n';
+            any_failed = any_failed || failed[i] != 0;
+        }
+        return any_failed ? 1 : 0;
     }
     catch (const std::exception& e)
     {

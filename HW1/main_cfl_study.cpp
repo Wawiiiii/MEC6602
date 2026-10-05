@@ -86,8 +86,14 @@ int main() {
         {"leap_frog", leap_frog},
         {"lax_wendroff", lax_wendroff},
         {"lax", lax},
-        {"crank_nicolson", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
+        {"theta_0_0", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
+            return scheme_theta(u0, CFL, nSteps, 0.0);
+        }},
+        {"theta_0_5", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
             return scheme_theta(u0, CFL, nSteps, 0.5);
+        }},
+        {"theta_1_0", [](const Eigen::VectorXd& u0, double CFL, int nSteps) {
+            return scheme_theta(u0, CFL, nSteps, 1.0);
         }},
         {"scheme_2space_4time", scheme_2space_4time},
         {"scheme_4space_2time", scheme_4space_2time},
