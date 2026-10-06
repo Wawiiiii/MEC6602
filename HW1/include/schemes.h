@@ -24,6 +24,12 @@ enum class OutletType
     Subsonic
 };
 
+struct IterationTiming
+{
+    double elapsed_seconds;
+    double iteration_seconds;
+};
+
 Mesh make_mesh(int n, double xMin, double xMax);
 
 double nozzle_area(double x);
@@ -59,9 +65,14 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
                                     double convergence, OutletType outlet_type,
                                     double back_pressure_ratio = 1.9,
                                     std::vector<double>* residual_history = nullptr,
-                                    int max_iterations = 100000);
+                                    int max_iterations = 100000,
+                                    std::vector<IterationTiming>* timing_history = nullptr);
+// residual_history stores R^n = ||Q^(n+1)-Q^n||_2 / ||Q^n||_2 after the
+// accepted correction and boundary conditions. Convergence still uses the
+// pre-correction relative discrete equation residual.
 Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
                                  double convergence, OutletType outlet_type,
                                  double back_pressure_ratio = 1.9,
                                  std::vector<double>* residual_history = nullptr,
-                                 int max_iterations = 100000);
+                                 int max_iterations = 100000,
+                                 std::vector<IterationTiming>* timing_history = nullptr);

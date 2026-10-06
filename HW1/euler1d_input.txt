@@ -6,7 +6,8 @@ n = 201
 Mach_in = 1.25
 back_pressure_ratio = 1.9
 
-# Each solver uses its own convergence metric and tolerance.
+# Plotted histories for both solvers use R^n = ||Q^(n+1)-Q^n||_2 / ||Q^n||_2.
+# MacCormack stops on R^n; Beam-Warming stops on its relative equation residual.
 tolerance_MacCormack = 1e-8
 tolerance_Implicit = 1e-8
 max_iterations = 30000

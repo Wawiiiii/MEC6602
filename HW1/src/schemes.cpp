@@ -1,7 +1,31 @@
 #include "schemes.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <stdexcept>
+
+namespace {
+using Clock = std::chrono::steady_clock;
+
+// A scope timer also records an iteration that exits through return or throw.
+class ScopedIterationTimer {
+public:
+    ScopedIterationTimer(std::vector<IterationTiming>* history, Clock::time_point solver_start)
+        : history_(history), solver_start_(solver_start), iteration_start_(Clock::now()) {}
+
+    ~ScopedIterationTimer() {
+        if (!history_) return;
+        const auto now = Clock::now();
+        history_->push_back({std::chrono::duration<double>(now - solver_start_).count(),
+                             std::chrono::duration<double>(now - iteration_start_).count()});
+    }
+
+private:
+    std::vector<IterationTiming>* history_;
+    Clock::time_point solver_start_;
+    Clock::time_point iteration_start_;
+};
+} // namespace
 
 Mesh make_mesh(int n, double xMin, double xMax) { 
 
@@ -335,7 +359,8 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
                                     double convergence, OutletType outlet_type,
                                     double back_pressure_ratio,
                                     std::vector<double>* residual_history,
-                                    int max_iterations)
+                                    int max_iterations,
+                                    std::vector<IterationTiming>* timing_history)
 {
     if (CFL <= 0.0 || CFL > 1.25 ||
         dx <= 0.0 ||
@@ -349,6 +374,11 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
     }
 
     if (residual_history) residual_history->clear();
+    if (timing_history) {
+        timing_history->clear();
+        timing_history->reserve(max_iterations);
+    }
+    const auto solver_start = Clock::now();
 
 
     (void)u; // Kept in the public signature; inlet velocity is set by Mach below.
@@ -397,6 +427,7 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
     Eigen::MatrixXd flux_prev(3, n), source_prev(3, n);
     Eigen::MatrixXd flux_pred(3, n), source_pred(3, n);
     for (int step = 0; step < max_iterations; ++step) {
+        ScopedIterationTimer timer(timing_history, solver_start);
         const double max_speed = flux_and_source(Q_prev, flux_prev, source_prev);
         const double dt = CFL * grid_dx / max_speed;
 
@@ -431,12 +462,18 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
                                  double convergence, OutletType outlet_type,
                                  double back_pressure_ratio,
                                  std::vector<double>* residual_history,
-                                 int max_iterations)
+                                 int max_iterations,
+                                 std::vector<IterationTiming>* timing_history)
 {
     if (CFL <= 0.0 || dx <= 0.0 || Mach <= 0.0 ||
         convergence <= 0.0 || dx > 5.0 || max_iterations < 1)
         throw std::invalid_argument("Require CFL > 0, dx > 0, Mach > 0, convergence > 0 and max_iterations > 0");
     if (residual_history) residual_history->clear();
+    if (timing_history) {
+        timing_history->clear();
+        timing_history->reserve(max_iterations);
+    }
+    const auto solver_start = Clock::now();
     (void)u;
 
     constexpr double gamma = 1.4, R = 287.0, T = 300.0, P = 101325.0;
@@ -476,6 +513,7 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
     std::vector<Block> jacobian(n), lower(ni), diagonal(ni), upper(ni), cprime(ni);
 
     for (int step = 0; step < max_iterations; ++step) {
+        ScopedIterationTimer timer(timing_history, solver_start);
         double max_speed = 0.0;
         for (int i = 0; i < n; ++i) {
             const double r = Q(0,i)/area(i), v = Q(1,i)/Q(0,i);
@@ -525,7 +563,8 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
         const double equation_residual = std::sqrt(rhs_norm_squared) / Q.norm();
         if (!std::isfinite(equation_residual))
             throw std::runtime_error("Implicit Euler residual is not finite");
-        if (residual_history) residual_history->push_back(equation_residual);
+        // Keep this pre-correction equation residual as the stopping criterion.
+        // A positivity-damped update can be tiny while the equation is unsatisfied.
         if (equation_residual < convergence) return Q;
         // Fixed boundary increments are zero; remove their couplings from the system.
         lower[0].setZero(); upper[ni-1].setZero();
@@ -576,6 +615,8 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
         }
         const double update = (Qnew-Q).norm()/Q.norm();
         if (!std::isfinite(update)) throw std::runtime_error("Implicit update is not finite");
+        // Qnew includes the accepted damping and boundary conditions, as in MacCormack.
+        if (residual_history) residual_history->push_back(update);
         Q.swap(Qnew);
     }
     throw std::runtime_error("Implicit Beam-Warming solver did not converge within "

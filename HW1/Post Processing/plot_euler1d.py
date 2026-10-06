@@ -3,8 +3,8 @@
 Run from any directory. Figures are saved without opening windows by default.
 Use --show to also display them.
 The inlet conditions and back-pressure ratio must match the Euler mains.
-MacCormack records relative state updates; Beam-Warming records the relative
-discrete equation residual used for its convergence test.
+Both solvers record the relative state update R^n and per-iteration timing.
+Beam-Warming still stops on its pre-correction discrete equation residual.
 """
 
 import argparse
@@ -205,7 +205,7 @@ def main():
         if match:
             outlet, method, cfl_text = match.groups()
             cfl = selected_cfl(float(cfl_text))
-            if cfl is None:
+            if cfl is None or cfl not in method_cfls[method]:
                 continue
             data = np.loadtxt(filepath, comments="#", ndmin=2)
             if data.shape[1] != 10 or not np.all(np.isfinite(data)) or np.any(np.diff(data[:, 0]) <= 0):
@@ -218,13 +218,23 @@ def main():
         if match:
             outlet, method, cfl_text = match.groups()
             cfl = selected_cfl(float(cfl_text))
-            if cfl is None:
+            if cfl is None or cfl not in method_cfls[method]:
                 continue
+            with filepath.open(encoding="utf-8") as file:
+                if file.readline().strip() != (
+                    "# iteration relative_update_Rn elapsed_seconds iteration_seconds"
+                ):
+                    raise ValueError(
+                        f"{filepath} lacks the four-column iteration history; regenerate Euler results."
+                    )
             data = np.loadtxt(filepath, comments="#", ndmin=2)
-            if (data.shape[1] != 2 or not np.all(np.isfinite(data))
-                    or np.any(data[:, 0] < 1) or np.any(np.diff(data[:, 0]) <= 0)
-                    or np.any(data[:, 1] < 0)):
-                raise ValueError(f"Invalid residual data in {filepath}: expected iteration and nonnegative residual.")
+            if (data.shape[1] != 4 or not np.array_equal(data[:, 0], np.arange(1, len(data) + 1))
+                    or not np.all(np.isfinite(data[:, 2:]))
+                    or np.any(data[:, 2:] < 0) or np.any(np.diff(data[:, 2]) < 0)
+                    or not np.all(np.isfinite(data[:-1, 1]))
+                    or not (np.isfinite(data[-1, 1]) or np.isnan(data[-1, 1]))
+                    or np.any(data[np.isfinite(data[:, 1]), 1] < 0)):
+                raise ValueError(f"Invalid four-column iteration history in {filepath}.")
             residuals[outlet].append((data, method, cfl))
 
     # Older single-CFL results can still be plotted from any results subfolder.
@@ -278,7 +288,15 @@ def main():
     figures = []
     def save_figure(fig, filename):
         fig.tight_layout()
-        if filename.startswith("euler1d_area_"):
+        if filename.startswith("euler1d_time_"):
+            if "_comparison_" in filename:
+                output = figure_root / "Execution_time" / filename
+            else:
+                method = next(name for name in method_labels if f"_{name}_cfl" in filename)
+                outlet = next(name for name in profiles if f"_{name}_" in filename)
+                folder = "Beam-Warming" if method == "Implicit" else method
+                output = figure_root / "Execution_time" / folder / outlet / filename
+        elif filename.startswith("euler1d_area_"):
             output = figure_root / "geometry" / filename
         elif "_comparison_CFL_" in filename:
             outlet = next(name for name in profiles if f"_{name}_" in filename)
@@ -364,10 +382,56 @@ def main():
             save_figure(fig,
                         f"euler1d_{name}_{outlet}_comparison_CFL_{args.compare_cfl:g}.png")
 
-    residual_labels = {
-        "MacCormack": "Relative state update",
-        "Implicit": "Relative discrete equation residual",
-    }
+    update_label = r"Relative state update $R^n$"
+    update_formula = r"$R^n = \|Q^{n+1}-Q^n\|_2 / \|Q^n\|_2$"
+    for outlet in residuals:
+        for method in method_labels:
+            curves = sorted((item for item in residuals[outlet]
+                             if item[1] == method and item[2] in method_cfls[method]
+                             and np.any(np.isfinite(item[0][:, 1]))),
+                            key=lambda item: item[2])
+            if not curves:
+                continue
+            fig, ax = plt.subplots(figsize=(8, 5))
+            for data, _, cfl in curves:
+                diverged = not any(item[1] == method and item[2] == cfl
+                                   for item in profiles[outlet])
+                valid = np.isfinite(data[:, 1])
+                ax.semilogy(data[valid, 0], np.maximum(data[valid, 1], np.finfo(float).tiny),
+                            color=cfl_colors[cfl], linewidth=1.4,
+                            label=f"CFL={cfl:g}" + (" (diverged)" if diverged else ""))
+            title = f"{method_labels[method]} - {outlet} - relative update history"
+            if method == "Implicit":
+                title += "\nStopping criterion: relative discrete equation residual"
+            ax.set(xlabel="Iteration", ylabel=update_label, title=title)
+            ax.grid(True, which="both", alpha=0.3)
+            ax.legend()
+           # fig.suptitle(update_formula)
+            save_figure(fig, f"euler1d_residual_{outlet}_{method}_cfl.png")
+
+    residual_comparison = {}
+    for outlet in residuals:
+        pair = {method: data for data, method, cfl in residuals[outlet]
+                if abs(cfl - args.compare_cfl) < 1e-6
+                and np.any(np.isfinite(data[:, 1]))}
+        if len(pair) == 2:
+            residual_comparison[outlet] = pair
+    for outlet, pair in residual_comparison.items():
+        fig, ax = plt.subplots(figsize=(8, 5))
+        for method, data in pair.items():
+            valid = np.isfinite(data[:, 1])
+            ax.semilogy(data[valid, 0], np.maximum(data[valid, 1], np.finfo(float).tiny),
+                        color=method_colors[method], linewidth=1.4, linestyle="--",
+                        label=method_labels[method])
+        ax.set(xlabel="Iteration", ylabel=update_label,
+               title=f"{outlet.capitalize()} outlet\n"
+                     f"Beam-Warming stops on the relative discrete equation residual, CFL = {args.compare_cfl:g}")
+        ax.grid(True, which="both", alpha=0.3)
+        ax.legend(fontsize="small")
+        #fig.suptitle(f"Relative update {update_formula} - CFL={args.compare_cfl:g}")
+        save_figure(fig, f"euler1d_residual_{outlet}_comparison_CFL_{args.compare_cfl:g}.png")
+
+    # Timing is measured inside each solver, before result files or figures are written.
     for outlet in residuals:
         for method in method_labels:
             curves = sorted((item for item in residuals[outlet]
@@ -377,35 +441,47 @@ def main():
                 continue
             fig, ax = plt.subplots(figsize=(8, 5))
             for data, _, cfl in curves:
-                diverged = not any(item[1] == method and item[2] == cfl
-                                   for item in profiles[outlet])
-                ax.semilogy(data[:, 0], np.maximum(data[:, 1], np.finfo(float).tiny),
-                            color=cfl_colors[cfl], linewidth=1.4,
-                            label=f"CFL={cfl:g}" + (" (diverged)" if diverged else ""))
-            ax.set(xlabel="Iteration", ylabel=residual_labels[method],
-                   title=f"{method_labels[method]} - {outlet} - residual history")
+                converged = any(item[1] == method and item[2] == cfl
+                                for item in profiles[outlet])
+                label = f"CFL={cfl:g}" + (" (failed)" if not converged else "")
+                valid = np.isfinite(data[:, 1])
+                ax.semilogy(data[valid, 2],
+                            np.maximum(data[valid, 1], np.finfo(float).tiny),
+                            color=cfl_colors[cfl], linewidth=1.5, label=label)
+            ax.set(xlabel="Cumulative solver time (s)", ylabel=update_label,
+                   title=f"{method_labels[method]} - {outlet} - residual versus runtime")
             ax.grid(True, which="both", alpha=0.3)
             ax.legend()
-            save_figure(fig, f"euler1d_residual_{outlet}_{method}_cfl.png")
+            save_figure(fig, f"euler1d_time_{outlet}_{method}_cfl.png")
 
-    residual_comparison = {}
     for outlet in residuals:
-        pair = {method: data for data, method, cfl in residuals[outlet]
-                if abs(cfl - args.compare_cfl) < 1e-6}
-        if len(pair) == 2:
-            residual_comparison[outlet] = pair
-    for outlet, pair in residual_comparison.items():
+        time_comparison = {(method, cfl): data
+                           for data, method, cfl in residuals[outlet]}
         fig, ax = plt.subplots(figsize=(8, 5))
-        for method, data in pair.items():
-            ax.semilogy(data[:, 0], np.maximum(data[:, 1], np.finfo(float).tiny),
-                        color=method_colors[method], linewidth=1.4, linestyle="--",
-                        label=f"{method_labels[method]} ({residual_labels[method]})")
-        ax.set(xlabel="Iteration", ylabel="Solver convergence metric",
-               title=f"{outlet.capitalize()} outlet")
+        for method in method_labels:
+            extreme_cfls = sorted({min(method_cfls[method]), max(method_cfls[method])})
+            for index, cfl in enumerate(extreme_cfls):
+                data = time_comparison.get((method, cfl))
+                if data is None:
+                    continue
+                total = data[-1, 2]
+                converged = any(item[1] == method and item[2] == cfl
+                                for item in profiles[outlet])
+                label = f"{method_labels[method]} - CFL={cfl:g} ({total:.3f} s)"
+                if not converged:
+                    label += " (failed)"
+                valid = np.isfinite(data[:, 1])
+                ax.semilogy(data[valid, 2],
+                            np.maximum(data[valid, 1], np.finfo(float).tiny),
+                            color=method_colors[method],
+                            linestyle="-" if index == 0 else "--",
+                            linewidth=1.6, label=label)
+        ax.set(xlabel="Cumulative solver time (s)", ylabel=update_label,
+               title=f"Residual versus runtime - {outlet} outlet\n"
+                     "Lowest and highest tested CFL for each scheme")
         ax.grid(True, which="both", alpha=0.3)
-        ax.legend(fontsize="small")
-        fig.suptitle(f"Residual histories - {outlet} - CFL={args.compare_cfl:g}")
-        save_figure(fig, f"euler1d_residual_{outlet}_comparison_CFL_{args.compare_cfl:g}.png")
+        ax.legend()
+        save_figure(fig, f"euler1d_time_comparison_{outlet}.png")
 
     if not args.no_show:
         plt.show()

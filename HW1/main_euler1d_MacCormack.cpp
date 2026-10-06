@@ -85,6 +85,8 @@ int main(int argc, char** argv)
                 std::filesystem::remove(profile_path);
                 std::filesystem::remove(residual_path);
                 std::vector<double> residuals;
+                std::vector<IterationTiming> timings;
+                bool solver_converged = false;
                 std::ostringstream message;
                 message << "MacCormack, " << run.outlet_name << " outlet, CFL = "
                         << run.cfl << ": ";
@@ -93,7 +95,8 @@ int main(int argc, char** argv)
                         run.cfl, u, dx, config.mach_in,
                         config.tolerance_maccormack, run.outlet,
                         config.back_pressure_ratio, &residuals,
-                        config.max_iterations);
+                        config.max_iterations, &timings);
+                    solver_converged = true;
                     write_euler_results(profile_path, Q);
                     message << "profile saved";
                 } catch (const std::exception& e) {
@@ -102,10 +105,10 @@ int main(int argc, char** argv)
                     message << "failed: " << e.what();
                     failed[index] = 1;
                 }
-                if (!residuals.empty()) {
-                    euler_study::write_residuals(residual_path, residuals,
-                                                 "relative_update");
-                    message << ", residuals saved";
+                if (!timings.empty()) {
+                    euler_study::write_iteration_history(residual_path, residuals, timings,
+                                                         "relative update R^n", solver_converged);
+                    message << ", iteration history saved";
                 }
                 messages[index] = message.str();
             });

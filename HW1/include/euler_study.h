@@ -1,5 +1,7 @@
 #pragma once
 
+#include "schemes.h"
+
 #include <cmath>
 #include <algorithm>
 #include <atomic>
@@ -203,14 +205,29 @@ inline RunOptions parse_run_options(int argc, char** argv,
     return options;
 }
 
-inline void write_residuals(const std::filesystem::path& filename,
-                            const std::vector<double>& residuals,
-                            const char* metric) {
+inline void write_iteration_history(const std::filesystem::path& filename,
+                                    const std::vector<double>& updates,
+                                    const std::vector<IterationTiming>& timings,
+                                    const char* stopping_criterion,
+                                    bool converged) {
+    if (updates.size() > timings.size())
+        throw std::invalid_argument("More residuals than timed iterations");
     std::ofstream file(filename);
     if (!file) throw std::runtime_error("Could not open " + filename.string());
-    file << "# iteration " << metric << '\n' << std::scientific << std::setprecision(16);
-    for (std::size_t i = 0; i < residuals.size(); ++i)
-        file << i + 1 << ' ' << residuals[i] << '\n';
+    file << "# iteration relative_update_Rn elapsed_seconds iteration_seconds\n"
+         << "# R^n = ||Q^(n+1)-Q^n||_2 / ||Q^n||_2; Q^(n+1) includes boundary conditions\n"
+         << "# stopping criterion: " << stopping_criterion << '\n'
+         << "# steady_clock seconds since solver start; file output and plotting excluded\n"
+         << "# nan residual means no accepted update in the terminal iteration\n"
+         << "# solver outcome: " << (converged ? "converged" : "failed") << '\n'
+         << std::scientific << std::setprecision(16);
+    for (std::size_t i = 0; i < timings.size(); ++i) {
+        file << i + 1 << ' ';
+        if (i < updates.size()) file << updates[i];
+        else file << "nan";
+        file << ' ' << timings[i].elapsed_seconds
+             << ' ' << timings[i].iteration_seconds << '\n';
+    }
     file.close();
     if (!file) throw std::runtime_error("Could not write " + filename.string());
 }
