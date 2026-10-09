@@ -570,13 +570,7 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
                 upper[j] = -sigma_i*Block::Identity()
                         + dt/(2.0*grid_dx)*jacobian[i+1];
 
-           // rhs[j] = -dt*residual
-           //     - eps_explicit*(dt*max_speed/grid_dx)*fourth_difference;
-            rhs_norm_squared += rhs[j].squaredNorm();
-           // diagonal[j] = Block::Identity() + 2.0*eps_implicit*Block::Identity();
-           // lower[j] = -eps_implicit*Block::Identity(); upper[j] = -eps_implicit*Block::Identity();
-           // upper[j] += theta*dt/(2.0*grid_dx)*jacobian[i];
-           // lower[j] -= theta*dt/(2.0*grid_dx)*jacobian[i];
+                rhs_norm_squared += rhs[j].squaredNorm();
         }
         // The correction can be artificially small after positivity damping.
         // Test the discrete Beam-Warming equation itself before declaring convergence.
