@@ -90,6 +90,7 @@ def normal_shock_profile(x, area, critical_area, total_pressure, total_temperatu
         exit_pressure = total_pressure_after / exit_factor ** (GAMMA / (GAMMA - 1.0))
         return exit_pressure, shock_area, critical_area_after, total_pressure_after
 
+    # Locate the shock by matching the predicted exit pressure to back pressure.
     lower, upper = float(x[0]), float(x[-1])
     pressure_at_lower = shock_state(lower)[0]
     pressure_at_upper = shock_state(upper)[0]
@@ -126,6 +127,7 @@ def normal_shock_profile(x, area, critical_area, total_pressure, total_temperatu
     return np.vstack((upstream, downstream)), shock_x
 
 
+# Reuse the solver inputs for the reference solution and CFL selection.
 def read_euler_input(filename):
     values = {}
     for raw_line in filename.read_text(encoding="utf-8").splitlines():
@@ -200,6 +202,7 @@ def main():
     residuals = {"supersonic": [], "subsonic": []}
     meshes = {}
 
+    # Load and validate profiles and iteration histories for the selected cases.
     for filepath in sorted(args.results_dir.rglob("*.dat")):
         match = PROFILE_NAME.fullmatch(filepath.name)
         if match:
@@ -255,6 +258,7 @@ def main():
     if not any(profiles.values()) and not any(residuals.values()):
         raise SystemExit("No Euler profiles or residual histories for the selected CFL values.")
 
+    # Build isentropic and normal-shock references from the inlet conditions.
     inlet_factor = 1.0 + 0.5 * (GAMMA - 1.0) * mach_in**2
     total_temperature = INLET_TEMPERATURE * inlet_factor
     total_pressure = INLET_PRESSURE * inlet_factor ** (GAMMA / (GAMMA - 1.0))
@@ -286,6 +290,7 @@ def main():
         (6, "mach", "Mach number", r"$M$"),
     ]
     figures = []
+    # Organize figures by quantity, scheme and outlet condition.
     def save_figure(fig, filename):
         fig.tight_layout()
         if filename.startswith("euler1d_time_"):

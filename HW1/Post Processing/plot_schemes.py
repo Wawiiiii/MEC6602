@@ -14,6 +14,7 @@ pattern = re.compile(r"(.+)_CFL_([0-9.]+)\.dat$")
 
 cfl_text = f"{CFL:.2f}"
 
+# Save one profile figure per scheme at the selected CFL.
 for filepath in sorted(glob.glob(os.path.join(results_dir, f"*_CFL_{cfl_text}.dat"))):
     match = pattern.match(os.path.basename(filepath))
     if not match:
@@ -23,6 +24,7 @@ for filepath in sorted(glob.glob(os.path.join(results_dir, f"*_CFL_{cfl_text}.da
     data = np.loadtxt(filepath, comments="#")
     x, u = data[:, 0], data[:, 1]
 
+    # Flag non-finite or excessively large values as divergence.
     diverged = not np.all(np.isfinite(u)) or np.max(np.abs(u[np.isfinite(u)]), initial=0.0) > 1e6
 
     plt.figure()

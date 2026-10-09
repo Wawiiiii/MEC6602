@@ -14,6 +14,7 @@ def main():
     parser.add_argument("--no-show", action="store_true", help="Save without opening a window")
     args = parser.parse_args()
 
+    # Use the first available result file when no input is specified.
     if args.input is None:
         files = sorted((hw1_dir / "results").glob("*_CFL_*.dat"))
         if not files:
@@ -32,6 +33,7 @@ def main():
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    # Display mesh coordinates along a single horizontal axis.
     fig, ax = plt.subplots()
     ax.plot(x, np.zeros_like(x), "o", markersize=3)
     ax.set(xlabel="x", title=f"Mesh points (n = {len(x)})")

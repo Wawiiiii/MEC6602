@@ -27,6 +27,7 @@ private:
 };
 } // namespace
 
+// Uniform grid including both endpoints.
 Mesh make_mesh(int n, double xMin, double xMax) { 
 
     Mesh mesh; 
@@ -37,6 +38,7 @@ Mesh make_mesh(int n, double xMin, double xMax) {
 
 }
 
+// Adjust the CFL-based time step to reach the final time exactly.
 TimeParams make_time_params(double CFL, double dx, double c, double t_final) { 
 
     TimeParams tp; 
@@ -47,6 +49,7 @@ TimeParams make_time_params(double CFL, double dx, double c, double t_final) {
     return tp;
 }
 
+// Unit pulse on the specified interval.
 InitialCondition make_initial_condition(const Mesh& mesh, double xStart, double xEnd) {
     
     InitialCondition ic;
@@ -61,6 +64,7 @@ InitialCondition make_gaussian_initial_condition(const Mesh& mesh, double x0, do
     return ic;
 }
 
+// Forward Euler in time with backward spatial differences.
 Eigen::VectorXd explicit_backward(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
     Eigen::VectorXd u = u0;
@@ -76,6 +80,7 @@ Eigen::VectorXd explicit_backward(const Eigen::VectorXd& u0, double CFL, int nSt
     return u;
 }
 
+// Forward Euler in time with forward spatial differences.
 Eigen::VectorXd explicit_forward(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
     Eigen::VectorXd u = u0;
@@ -94,6 +99,7 @@ Eigen::VectorXd leap_frog(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
     Eigen::Index m = u0.size() - 2;
 
+    // Start leap-frog with one explicit backward step.
     Eigen::VectorXd u_previous = u0;
     Eigen::VectorXd u_current = explicit_backward(u0, CFL, 1);
 
@@ -107,6 +113,7 @@ Eigen::VectorXd leap_frog(const Eigen::VectorXd& u0, double CFL, int nSteps) {
     return u_current;
 }
 
+// Second-order Taylor update with centered spatial differences.
 Eigen::VectorXd lax_wendroff(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
     Eigen::Index m = u0.size() - 2;
@@ -124,6 +131,7 @@ Eigen::VectorXd lax_wendroff(const Eigen::VectorXd& u0, double CFL, int nSteps) 
     return u_current;
 }
 
+// Lax-Friedrichs update using neighboring values for numerical diffusion.
 Eigen::VectorXd lax(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
     Eigen::Index m = u0.size() - 2;
@@ -138,6 +146,7 @@ Eigen::VectorXd lax(const Eigen::VectorXd& u0, double CFL, int nSteps) {
     return u_current;
 }
 
+// Fourth-order time expansion on a five-point spatial stencil.
 Eigen::VectorXd scheme_2space_4time(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
     Eigen::Index m = u0.size() - 4;
@@ -172,6 +181,7 @@ Eigen::VectorXd scheme_2space_4time(const Eigen::VectorXd& u0, double CFL, int n
     return u_current;
 }
 
+// Crank-Nicolson update with fourth-order centered spatial differences.
 Eigen::VectorXd scheme_4space_2time(const Eigen::VectorXd& u0, double CFL, int nSteps) {
 
     const Eigen::Index n = u0.size();
@@ -224,6 +234,7 @@ Eigen::VectorXd scheme_4space_2time(const Eigen::VectorXd& u0, double CFL, int n
     return u_current;
 }
 
+// Blend explicit and implicit centered updates using theta.
 Eigen::VectorXd scheme_theta(const Eigen::VectorXd& u0, double CFL,
                              int nSteps, double theta) {
 
@@ -264,6 +275,7 @@ Eigen::VectorXd scheme_theta(const Eigen::VectorXd& u0, double CFL,
 }
 
 
+// Nozzle cross-sectional area and its axial derivative.
 double nozzle_area(double x)
 {
     return 1.398 + 0.347 * std::tanh(0.8*x - 4);
@@ -288,7 +300,7 @@ void apply_boundary_conditions(
     OutletType outlet_type,
     double back_pressure_ratio)
 {
-    // ----- Inlet supersonic -----
+    // Prescribe the full state at the supersonic inlet.
     double c_in = std::sqrt(gamma * R * T_in);
     double u_in = Mach_in * c_in;
     double rho_in = P_in / (R * T_in);
@@ -299,17 +311,17 @@ void apply_boundary_conditions(
     Q(1, 0) = rho_in * u_in * A(0);
     Q(2, 0) = rho_in * E_in * A(0);
 
-    // ----- Outlet -----
+    // Select the outlet treatment from the flow regime.
     int N = Q.cols() - 1;
 
     if (outlet_type == OutletType::Supersonic)
     {
-        // Extrapolation primitive
+        // Extrapolate the primitive state from the last interior point.
         Q.col(N) = Q.col(N - 1) * A(N) / A(N - 1);
     }
     else
     {
-        // intérieur
+        // Recover the interior state for the subsonic outlet.
         double rho_i = Q(0, N - 1) / A(N - 1);
         double u_i   = Q(1, N - 1) / Q(0, N - 1);
         double E_i   = Q(2, N - 1) / Q(0, N - 1);
@@ -330,17 +342,17 @@ void apply_boundary_conditions(
             throw std::invalid_argument(
                 "Subsonic-outlet back pressure must satisfy 0 < P_B < inlet total pressure");
 
-        // Hypothèse isentropique à la sortie
+        // Assume an isentropic relation to the imposed outlet pressure.
         double rho_L =
             rho_i * std::pow(P_L / P_i, 1.0 / gamma);
 
         double c_L =
             std::sqrt(gamma * P_L / rho_L);
 
-        // Invariant venant de l'intérieur
+        // Carry the outgoing Riemann invariant from the interior.
         double R1 = u_i + 2.0 * c_i / (gamma - 1.0);
 
-        // Reconstruction
+        // Reconstruct the outlet velocity and energy.
         double u_L =
             R1 - 2.0 * c_L / (gamma - 1.0);
 
@@ -398,11 +410,13 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
     Eigen::VectorXd A = x.unaryExpr([](double xi) { return nozzle_area(xi); });
     Eigen::VectorXd dAdx = x.unaryExpr([](double xi) { return der_nozzle_area(xi); });
 
+    // Store area-weighted density, momentum and total energy.
     Eigen::MatrixXd Q_prev(3, n);
     Q_prev.row(0) = (rho * A).transpose();
     Q_prev.row(1) = (rho * u_in * A).transpose();
     Q_prev.row(2) = (rho * E * A).transpose();
 
+    // Evaluate Euler fluxes, the area source and the largest wave speed.
     auto flux_and_source = [&](const Eigen::MatrixXd& Q, Eigen::MatrixXd& flux,
                                Eigen::MatrixXd& source) {
         double max_speed = 0.0;
@@ -431,6 +445,7 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
         const double max_speed = flux_and_source(Q_prev, flux_prev, source_prev);
         const double dt = CFL * grid_dx / max_speed;
 
+        // Predictor with backward differences, followed by a forward corrector.
         Eigen::MatrixXd Q_pred = Q_prev;
         for (int i = 1; i < n - 1; ++i)
             Q_pred.col(i) = Q_prev.col(i) - dt / grid_dx *
@@ -446,6 +461,7 @@ Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach
 
         apply_boundary_conditions(Q_new, A, gamma, R, T, P, Mach, outlet_type, back_pressure_ratio);
 
+        // Stop when the relative state update falls below the tolerance.
         const double residual = (Q_new - Q_prev).norm() / Q_prev.norm();
         if (!std::isfinite(residual))
             throw std::runtime_error("MacCormack residual is not finite");
@@ -490,12 +506,14 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
     const Eigen::VectorXd area = x.unaryExpr([](double xi) { return nozzle_area(xi); });
     const Eigen::VectorXd darea = x.unaryExpr([](double xi) { return der_nozzle_area(xi); });
 
+    // Initialize a uniform inlet state weighted by the local nozzle area.
     Eigen::MatrixXd Q(3, n);
     for (int i = 0; i < n; ++i) Q.col(i) << rho * area(i), rho * velocity * area(i), rho * energy * area(i);
     apply_boundary_conditions(Q, area, gamma, R, T, P, Mach, outlet_type, back_pressure_ratio);
 
     using Block = Eigen::Matrix3d;
     const int ni = n - 2;
+    // Evaluate the flux, area source and flux Jacobian for linearization.
     auto flux_source_jacobian = [&](int i, Eigen::Vector3d& flux, Eigen::Vector3d& source, Block& jac) {
         const double r = Q(0,i) / area(i), v = Q(1,i) / Q(0,i), E = Q(2,i) / Q(0,i);
         const double p = (gamma - 1.0) * r * (E - 0.5*v*v);
@@ -522,10 +540,12 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
             max_speed = std::max(max_speed, std::abs(v)+std::sqrt(gamma*p/r));
         }
         const double dt = CFL * grid_dx / max_speed;
+        // Scale artificial dissipation by the time step and wave speed.
         const double sigma_e = eps_explicit * dt * max_speed / grid_dx;
         const double sigma_i = eps_implicit * dt * max_speed / grid_dx;
         for (int i = 0; i < n; ++i)
             flux_source_jacobian(i, flux[i], source[i], jacobian[i]);
+        // Assemble the block tridiagonal system for the state correction.
         double rhs_norm_squared = 0.0;
         for (int j = 0; j < ni; ++j) {
             const int i = j+1;
@@ -568,6 +588,7 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
         if (equation_residual < convergence) return Q;
         // Fixed boundary increments are zero; remove their couplings from the system.
         lower[0].setZero(); upper[ni-1].setZero();
+        // Block Thomas algorithm: forward elimination, then back substitution.
         Eigen::PartialPivLU<Block> first_solver(diagonal[0]);
         cprime[0] = first_solver.solve(upper[0]);
         dprime[0] = first_solver.solve(rhs[0]);
@@ -588,6 +609,7 @@ Eigen::MatrixXd euler1d_implicit(double CFL, double u, double dx, double Mach,
         bool physical = false;
         Eigen::Index bad_cell = -1;
         double bad_density = 0.0, bad_pressure = 0.0;
+        // Halve the correction until density and pressure remain physical.
         for (int attempt = 0; attempt < 60; ++attempt) {
             Qnew = Q;
             for (int j = 0; j < ni; ++j) Qnew.col(j+1) += relaxation*correction[j];

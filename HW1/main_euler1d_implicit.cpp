@@ -12,6 +12,7 @@
 #include <vector>
 
 namespace {
+// Recover primitive variables and export them with the conservative state.
 void write_euler_results(const std::filesystem::path& filename, const Eigen::MatrixXd& Q)
 {
     constexpr double gamma = 1.4, R = 287.0;
@@ -41,6 +42,7 @@ void write_euler_results(const std::filesystem::path& filename, const Eigen::Mat
 int main(int argc, char** argv)
 {
     try {
+        // Load study settings and apply command-line overrides.
         const std::filesystem::path hw1_dir = HW1_SOURCE_DIR;
         const auto config = euler_study::read_config(hw1_dir / "euler1d_input.txt");
         const auto run_options = euler_study::parse_run_options(
@@ -55,6 +57,7 @@ int main(int argc, char** argv)
         std::filesystem::create_directories(profiles_dir);
         std::filesystem::create_directories(residuals_dir);
 
+        // Pair each CFL with both outlet conditions for independent runs.
         struct Case { double cfl; OutletType outlet; std::string outlet_name; std::string stem; };
         std::vector<Case> cases;
         for (double cfl : run_options.cfl_values) {
@@ -99,6 +102,7 @@ int main(int argc, char** argv)
                     message << "failed: " << e.what();
                     failed[index] = 1;
                 }
+                // Retain iteration histories even when a solver run fails.
                 if (!timings.empty()) {
                     euler_study::write_iteration_history(residual_path, residuals, timings,
                                                          "relative discrete equation residual (evaluated before the update)",

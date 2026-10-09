@@ -11,7 +11,7 @@ import re
 
 import matplotlib
 
-matplotlib.use("Agg")  # Enregistre les figures même sans interface graphique.
+matplotlib.use("Agg")  # Save figures without a graphical interface.
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -30,6 +30,7 @@ def main():
     if not args.results_dir.is_dir():
         parser.error(f"Dossier de données introuvable : {args.results_dir}")
 
+    # Group result files by scheme for the CFL comparisons.
     files_by_scheme = {}
     for path in args.results_dir.glob("*_CFL_*.dat"):
         match = FILENAME.fullmatch(path.name)
@@ -54,8 +55,7 @@ def main():
         if not curves:
             continue
 
-        # Les valeurs divergentes peuvent atteindre 1e300. L'échelle est choisie
-        # d'après les courbes non divergentes pour garder la comparaison lisible.
+        # Use stable curves to set a readable vertical scale.
         stable = [u for _, _, u, diverged in curves if not diverged]
         if stable:
             values = np.concatenate(stable)
@@ -75,8 +75,7 @@ def main():
             label = f"CFL = {cfl:g}"
             if diverged:
                 label += " (divergent)"
-                # Les segments hors de l'échelle choisie ne doivent pas former
-                # une bande opaque qui cache les autres courbes.
+                # Hide out-of-range segments so they do not obscure other curves.
                 u = np.where((u >= y_limits[0]) & (u <= y_limits[1]), u, np.nan)
             ax.plot(x, u, label=label, linewidth=1.5,
                     zorder=2 if diverged else 3)

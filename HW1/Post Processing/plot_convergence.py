@@ -42,6 +42,7 @@ def main():
             raise ValueError(f"Expected dx, error, order columns in {filepath}")
 
         dx, error = data[:, 0], data[:, 1]
+        # Keep only positive finite values for the logarithmic comparison.
         valid = np.isfinite(dx) & (dx > 0) & np.isfinite(error) & (error > 0)
         if not np.any(valid):
             print(f"{scheme}: no positive finite error values, skipping")
@@ -55,6 +56,7 @@ def main():
 
         order = NOMINAL_ORDER.get(scheme)
         if order is not None:
+            # Anchor the nominal-order reference at the finest valid mesh.
             finest = np.argmin(log_dx)
             reference = log_error[finest] + order * (log_dx - log_dx[finest])
             ax.plot(log_dx, reference, "k--", linewidth=1,

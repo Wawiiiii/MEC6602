@@ -37,6 +37,7 @@ struct ConvergenceConfig {
     int threads = 0; // 0 uses all available CPU threads
 };
 
+// Read the mesh sweep and initial-condition settings from key-value input.
 ConvergenceConfig read_convergence_config(const std::string& filename) {
     ConvergenceConfig config;
     std::ifstream file(filename);
@@ -91,6 +92,7 @@ ConvergenceConfig read_convergence_config(const std::string& filename) {
     return config;
 }
 
+// Discrete L2 error weighted by the uniform mesh spacing.
 double l2_error(const Eigen::VectorXd& u, const Eigen::VectorXd& u_exact, double dx) {
     return std::sqrt(dx * (u - u_exact).array().square().sum());
 }
@@ -130,6 +132,7 @@ std::string format_double(double value) {
 void report_convergence(const std::vector<double>& dx_values,
                          const std::map<std::string, std::vector<double>>& errors) {
     for (const auto& [name, error_values] : errors) {
+        // Estimate the observed order between successive mesh resolutions.
         std::vector<double> order(error_values.size(), std::numeric_limits<double>::quiet_NaN());
         for (std::size_t i = 1; i < error_values.size(); ++i) {
             order[i] = std::log(error_values[i - 1] / error_values[i]) /
@@ -215,6 +218,7 @@ int main() {
     std::vector<Case> cases;
     cases.reserve(config.n_values.size());
 
+    // Refine the mesh at fixed dt and evaluate the exact translated profile.
     for (int n : config.n_values) {
         Mesh mesh = make_mesh(n, 0.0, PI);
         InitialCondition ic = make_ic(config, mesh);

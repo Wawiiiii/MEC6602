@@ -17,6 +17,7 @@ struct SimulationConfig {
     std::vector<double> CFL_values = {0.25, 0.5, 0.75, 1.0, 1.25};
 };
 
+// Read key-value settings, keeping defaults for unspecified parameters.
 SimulationConfig read_simulation_config(const std::string& filename) {
     SimulationConfig config;
     std::ifstream file(filename);
@@ -74,6 +75,7 @@ int main() {
     Mesh mesh = make_mesh(n, xMin, xMax);
     InitialCondition ic = make_initial_condition(mesh, 0.5, 1.0);
 
+    // Advect the pulse until its center reaches the target position.
     double x_mid_0 = (0.5 + 1.0) / 2.0;
     double x_mid_final = 2.5;
     double t_final = (x_mid_final - x_mid_0) / c;
@@ -101,6 +103,7 @@ int main() {
 
     std::filesystem::create_directories("results");
 
+    // Run every scheme at each requested CFL and export the final profile.
     for (const auto& [name, scheme] : schemes) {
         for (double CFL : CFL_values) {
             TimeParams tp = make_time_params(CFL, mesh.dx, c, t_final);

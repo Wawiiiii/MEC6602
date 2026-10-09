@@ -4,6 +4,7 @@
 #include <Eigen/SparseLU>
 #include <vector>
 
+// Uniform one-dimensional mesh and its spacing.
 struct Mesh
 {
     Eigen::VectorXd x;
@@ -24,6 +25,7 @@ enum class OutletType
     Subsonic
 };
 
+// Cumulative solver time and duration of one iteration, in seconds.
 struct IterationTiming
 {
     double elapsed_seconds;
@@ -49,6 +51,7 @@ InitialCondition make_initial_condition(const Mesh &mesh, double xStart, double 
 // discontinuous initial condition would cap the observed order of accuracy.
 InitialCondition make_gaussian_initial_condition(const Mesh &mesh, double x0, double sigma);
 
+// Linear advection schemes returning the state after nSteps.
 Eigen::VectorXd explicit_backward(const Eigen::VectorXd &u0, double CFL, int nSteps);
 Eigen::VectorXd explicit_forward(const Eigen::VectorXd &u0, double CFL, int nSteps);
 Eigen::VectorXd leap_frog(const Eigen::VectorXd &u0, double CFL, int nSteps);
@@ -61,6 +64,7 @@ Eigen::VectorXd scheme_theta(const Eigen::VectorXd &u0, double CFL, int nSteps, 
 
 // back_pressure_ratio is P_B / P_in, with P_in the static inlet pressure.
 void apply_boundary_conditions(Eigen::MatrixXd& Q, const Eigen::VectorXd& A, double gamma, double R, double T_in, double P_in, double Mach_in, OutletType outlet_type, double back_pressure_ratio = 1.9);
+// Steady nozzle solvers returning rows rho*A, rho*u*A and rho*E*A.
 Eigen::MatrixXd euler1d_mackcormack(double CFL, double u, double dx, double Mach,
                                     double convergence, OutletType outlet_type,
                                     double back_pressure_ratio = 1.9,

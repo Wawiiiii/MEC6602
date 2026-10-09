@@ -20,6 +20,7 @@
 
 namespace euler_study {
 
+// Format CFL values consistently for result filenames.
 inline std::string cfl_label(double cfl) {
     std::ostringstream text;
     text << std::fixed << std::setprecision(6) << cfl;
@@ -70,6 +71,7 @@ inline std::vector<double> parse_cfl_list(const std::string& text,
     return values;
 }
 
+// Read and validate the shared Euler study settings.
 inline Config read_config(const std::filesystem::path& filename) {
     std::ifstream file(filename);
     if (!file) throw std::runtime_error("Could not open " + filename.string());
@@ -136,6 +138,7 @@ inline std::size_t effective_worker_count(std::size_t count, int requested_worke
     return std::min(count, std::max<std::size_t>(1, desired));
 }
 
+// Distribute cases among workers and propagate the first exception after joining.
 template <typename Function>
 inline void parallel_for(std::size_t count, int requested_workers, Function function) {
     const std::size_t worker_count = effective_worker_count(count, requested_workers);
@@ -178,6 +181,7 @@ struct RunOptions {
     int parallel_workers = 0;
 };
 
+// Override the configured CFL list or worker count from the command line.
 inline RunOptions parse_run_options(int argc, char** argv,
                                     const std::vector<double>& configured_cfls,
                                     double max_cfl, int configured_workers) {
@@ -205,6 +209,7 @@ inline RunOptions parse_run_options(int argc, char** argv,
     return options;
 }
 
+// Export state updates and timings, including any terminal failed iteration.
 inline void write_iteration_history(const std::filesystem::path& filename,
                                     const std::vector<double>& updates,
                                     const std::vector<IterationTiming>& timings,
