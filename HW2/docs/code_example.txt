@@ -1,0 +1,266 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+// Define the number of ghost cell layers required
+#define NGHOST 2
+
+
+int read_plot3d_mesh(const char *filename, int *ni, int *nj, double **xx, double **yy) {
+
+    printf("Reading mesh ...\n");
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        fprintf(stderr, "Error: Could not open file %s\n", filename);
+        return -1;
+    }
+
+    //Read the number of blocks. Always single blocks here
+    int nblock; // Not used
+    fscanf_s(file, "%d", &nblock);
+
+
+    // Read the number of nodes
+    fscanf_s(file, "%d %d", ni, nj);
+
+    int meshSize = (*ni + 2*NGHOST) * (*nj + 2*NGHOST);
+    // Allocate space for the mesh
+    *xx = (double*)malloc(meshSize * sizeof(double));
+    *yy = (double*)malloc(meshSize * sizeof(double));
+
+
+    // Read all X coordinates
+    for (int jj = NGHOST; jj < *nj+NGHOST; jj++) {
+        for (int ii = NGHOST; ii < *ni+NGHOST; ii++) {
+            double coord;
+            fscanf_s(file, "%le", &coord);
+            int index = (jj)*(*ni+2*NGHOST)+ii;
+            //printf("%d\n", index);
+            (*xx)[index] = coord;
+        }
+    }
+
+    // Read all y coordinates
+    for (int jj = NGHOST; jj < *nj+NGHOST; jj++) {
+        for (int ii = NGHOST; ii < *ni+NGHOST; ii++) {
+
+            double coord;
+            fscanf_s(file, "%le", &coord);
+            int index = (jj)*(*ni+2*NGHOST)+ii;
+            (*yy)[index] = coord;
+        }
+    }
+
+    fclose(file);
+    printf("Reading mesh ...Done\n");
+
+    return 0;
+}
+
+int write_tecplot_mesh(const char *filename, int ni, int nj, double *xx, double *yy, double *xx2, double *yy2) {
+    printf("Writing tecplot file ...\n");
+    FILE *file = fopen(filename, "w");
+    if (file == NULL) {
+        fprintf(stderr, "Error: Could not open output file %s for Tecplot writing.\n", filename);
+        return -1;
+    }
+
+    // Tecplot Header
+    fprintf(file, "TITLE = \"2D Structured Mesh Physical Nodes (I=%d, J=%d)\"\n",ni, nj);
+    fprintf(file, "VARIABLES = \"x\", \"y\", \"xx\", \"yy\"\n");
+
+    // Zone Header
+    fprintf(file, "ZONE I=%d, J=%d, F=BLOCK\n", ni, nj);
+
+    int node_inci = ni+2*NGHOST;
+    int cell_inci = ni+2*NGHOST-1;
+
+    for (int jj = NGHOST; jj < nj+NGHOST; jj++) {
+        for (int ii = NGHOST; ii < ni+NGHOST; ii++) {
+
+
+	    int index = jj*node_inci+ii;
+            fprintf(file, "%.10f ", xx[index]);
+        }
+        fprintf(file, "\n");
+    }
+
+    for (int jj = NGHOST; jj < nj+NGHOST; jj++) {
+        for (int ii = NGHOST; ii < ni+NGHOST; ii++) {
+
+	        int index = jj*node_inci+ii;
+            fprintf(file, "%.10f ", yy[index]);
+        }
+        fprintf(file, "\n");
+    }
+    // Interpolate the cell centered array at the node for output
+
+    for (int jj = NGHOST; jj < nj+NGHOST; jj++) {
+        for (int ii = NGHOST; ii < ni+NGHOST; ii++) {
+        	    int node = jj*node_inci+ii;
+
+        	    int cell1 = (jj-1)*cell_inci+ii-1;
+                int cell2 = (jj)*cell_inci+ii-1;
+                int cell3 = (jj-1)*cell_inci+ii;
+                int cell4 = (jj)*cell_inci+ii;
+
+                printf("Node: %d, Cell1: %d, Cell2: %d, Cell3: %d, Cell4: %d\n", node, cell1, cell2, cell3, cell4);
+
+                fprintf(file, "%.10f ", 0.25*(xx2[cell1]+xx2[cell2]+xx2[cell3]+xx2[cell4]));
+            }
+        fprintf(file, "\n");
+    }
+
+    // Interpolate the cell centered array at the node for output
+    for (int jj = NGHOST; jj < nj+NGHOST; jj++) {
+        for (int ii = NGHOST; ii < ni+NGHOST; ii++) {
+
+                int node = jj*node_inci+ii;
+
+                int cell1 = (jj-1)*cell_inci+ii-1;
+                int cell2 = (jj)*cell_inci+ii-1;
+                int cell3 = (jj-1)*cell_inci+ii;
+                int cell4 = (jj)*cell_inci+ii;
+
+                fprintf(file, "%.10f ", 0.25*(yy2[cell1]+yy2[cell2]+yy2[cell3]+yy2[cell4]));
+            }
+        fprintf(file, "\n");
+    }
+
+    printf("Writing tecplot file ...Done\n");
+    fclose(file);
+
+    return 0;
+}
+
+int fill_cell_array(int nic, int njc, double *xx2, double *yy2, double *xx, double *yy){
+    printf("Filling cell array ...\n");
+    int cell_inci = nic+2*NGHOST;
+    int node_inci = nic+2*NGHOST+1;
+    int nNode = (nic+2*NGHOST+1) * (njc+2*NGHOST+1);
+
+    // Fill cell centered array with average of the four corner coordinate
+
+    for (int jj = NGHOST; jj < njc+NGHOST; jj++) {
+        for (int ii = NGHOST; ii < nic+NGHOST; ii++) {
+	        int icell = jj*cell_inci + ii;
+            int inode1 = jj*node_inci + ii;
+            int inode2 = (jj+1)*node_inci + ii;
+            int inode3 = (jj)*node_inci + (ii+1);
+            int inode4 = (jj+1)*node_inci + (ii+1);
+
+            printf("Cell: %d, Node1: %d, Node2: %d, Node3: %d, Node4: %d\n", icell, inode1, inode2, inode3, inode4);
+
+            xx2[icell] = 0.25*(xx[inode1]+xx[inode2]+xx[inode3]+xx[inode4]);
+	        yy2[icell] = 0.25*(yy[inode1]+yy[inode2]+yy[inode3]+yy[inode4]);
+        }
+    }
+
+
+    for (int ii = 2; ii < nic+NGHOST; ii++) {
+        int jj = NGHOST-1;
+        int icell = jj*cell_inci + ii;
+        int icellp1 = (jj+1)*cell_inci + ii;
+        int icellp2 = (jj+2)*cell_inci + ii;
+
+        printf("imin : cell: %d, cell+1: %d, cell+2: %d\n", icell,icellp1,icellp2);
+
+        xx2[icell] = xx2[icellp1]+(xx2[icellp1]-xx2[icellp2]);
+        yy2[icell] = yy2[icellp1]+(yy2[icellp1]-yy2[icellp2]);
+    }
+    // Fill jmax BC
+    for (int ii = 2; ii < nic+NGHOST; ii++) {
+        int jj = njc+NGHOST;
+    	int icell = jj*cell_inci + ii;
+    	int icellm1 = (jj-1)*cell_inci + ii;
+        int icellm2 = (jj-2)*cell_inci + ii;
+
+        printf("imax : cell: %d, cell-1: %d, cell-2: %d\n", icell,icellm1,icellm2);
+
+        xx2[icell] = xx2[icellm1]+(xx2[icellm1]-xx2[icellm2]);
+        yy2[icell] = yy2[icellm1]+(yy2[icellm1]-yy2[icellm2]);
+    }
+
+    for (int jj = 0; jj < njc+NGHOST*2; jj++) {
+        int ii = NGHOST-1;
+        int icell = jj*cell_inci + ii;
+        int icellp1 = (jj)*cell_inci + ii+1;
+        int icellp2 = (jj)*cell_inci + ii+2;
+
+        printf("jmin : cell: %d, cell+1: %d, cell+2: %d\n", icell,icellp1,icellp2);
+
+        xx2[icell] = xx2[icellp1]+(xx2[icellp1]-xx2[icellp2]);
+        yy2[icell] = yy2[icellp1]+(yy2[icellp1]-yy2[icellp2]);
+    }
+    // Fill imax BC
+    for (int jj = 0; jj < njc+NGHOST*2; jj++) {
+        int ii = nic+NGHOST;
+        int icell = jj*cell_inci + ii;
+        int icellm1 = (jj)*cell_inci + ii-1;
+        int icellm2 = (jj)*cell_inci + ii-2;
+
+        printf("jmax : cell: %d, cell-1: %d, cell-2: %d\n", icell,icellm1,icellm2);
+
+        xx2[icell] = xx2[icellm1]+(xx2[icellm1]-xx2[icellm2]);
+        yy2[icell] = yy2[icellm1]+(yy2[icellm1]-yy2[icellm2]);
+    }
+
+    for (int dir = 0; dir<2; dir++){
+        int inc;
+        int inc1;
+    	if (dir == 0) {
+
+    	   inc1 = nic+2*NGHOST;
+           inc = 0;
+    	}
+        else if (dir ==1) {
+            inc1 = 1;
+            inc = nic+2*NGHOST;
+        }
+        for (int jj = NGHOST; jj < njc+1+NGHOST; jj++) {
+    	    for (int ii = NGHOST; ii < nic+1+NGHOST; ii++) {
+                int iface = jj*node_inci + ii+dir*nNode;
+                int inode1 = iface+inc+1;
+                int inode2 = iface;
+
+                int iright = jj*cell_inci+ii;
+                int ileft = iright - inc1;
+
+                printf("face : %d, leftCell : %d, rightCell: %d\n", iface, ileft, iright);
+
+            }
+        }
+    }
+
+    // Loop on the faces
+
+    printf("Filling cell array ...Done\n");
+    return 0;
+}
+
+
+int main() {
+    const char *mesh_file = "SimpleCartesianMesh.x";
+
+    int ni, nj; // Number of nodes in i and j
+    int nic, njc; // Number of cells in i and j
+    double *xx = NULL; // x coordinate
+    double *yy = NULL; // y coordinate
+    double *xx2 = NULL; // array for the cell-center coordinate
+    double *yy2 = NULL; // array for the cell-center coordinate
+    read_plot3d_mesh(mesh_file, &ni, &nj, &xx, &yy);
+
+    // There is one less cell than the number of nore
+    nic = ni-1;
+    njc = nj-1;
+    xx2 = (double*)malloc((nic+2*NGHOST+1) * (njc+2*NGHOST+1) * sizeof(double));
+    yy2 = (double*)malloc((nic+2*NGHOST+1) * (njc+2*NGHOST+1) * sizeof(double));
+
+    fill_cell_array(nic, njc, xx2, yy2, xx, yy);
+
+    write_tecplot_mesh("out.dat", ni, nj, xx, yy, xx2, yy2);
+
+
+    return 0;
+}
