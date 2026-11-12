@@ -42,9 +42,9 @@ namespace euler {
                             "left" cell (i, j-1), "right" cell (i, j)
            Normals are unit vectors from left to right (towards +i or +j).
            At the boundaries the left or right cell is a ghost cell.
-           Unused slots (ghosts) stay NaN.
+           Unused slots (ghosts) stay NaN, except the ghost-cell areas (see compute_metrics).
         */
-        std::vector<double> vol; // cell area Omega (the 2D "volume"), size nic_tot * njc_tot
+        std::vector<double> vol; // cell area Omega (the 2D "volume"), size nic_tot * njc_tot, ghosts filled
         std::vector<double> nix; // i-face unit normal, x component, size ni_tot * nj_tot
         std::vector<double> niy; // i-face unit normal, y component, size ni_tot * nj_tot
         std::vector<double> si;  // i-face length Delta S, size ni_tot * nj_tot

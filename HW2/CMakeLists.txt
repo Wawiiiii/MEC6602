@@ -22,6 +22,11 @@ endif()
 add_library(euler2d
     src/mesh.cpp
     src/output.cpp
+    src/flow.cpp
+    src/roe.cpp
+    src/residual.cpp
+    src/bc.cpp
+    src/solver.cpp
 )
 target_include_directories(euler2d PUBLIC include)
 
@@ -32,3 +37,19 @@ target_link_libraries(test_mesh PRIVATE euler2d)
 # Step 2 check: metrics, constant-flux residual, write mesh with areas (Euler2D slides 21-22).
 add_executable(test_metrics tests/test_metrics.cpp)
 target_link_libraries(test_metrics PRIVATE euler2d)
+
+# Step 3 check: Roe flux, MUSCL + Hemker-Koren, residual (Roe_scheme_accel slides 5-16).
+add_executable(test_roe tests/test_roe.cpp)
+target_link_libraries(test_roe PRIVATE euler2d)
+
+# Step 4 check: boundary conditions with ghost cells (basic_algo slides 7, 13-16, 20).
+add_executable(test_bc tests/test_bc.cpp)
+target_link_libraries(test_bc PRIVATE euler2d)
+
+# The solver program: euler <mesh.x> <mach> <alpha_deg> [options].
+add_executable(euler apps/euler_main.cpp)
+target_link_libraries(euler PRIVATE euler2d)
+
+# Step 5 check: explicit Euler / multistage RK with local time stepping (basic_algo slides 17-18).
+add_executable(test_explicit tests/test_explicit.cpp)
+target_link_libraries(test_explicit PRIVATE euler2d)

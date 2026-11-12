@@ -24,3 +24,4 @@ __pycache__/
 
 # Microsoft
 Microsoft/
+.claude/settings.local.json

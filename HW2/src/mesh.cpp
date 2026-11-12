@@ -114,6 +114,27 @@ namespace euler {
         }
 
         /*
+           Ghost-cell areas. The MUSCL limiter uses eps = Omega^2 of the cell a face state
+           comes from (Roe_scheme_accel slide 16), and at a boundary face that cell is a ghost.
+             i-cut (imin/imax): the ghost cells ARE the cells across the cut -> copy them.
+             wall (jmin) and farfield (jmax): the ghost cell is the mirror image of the
+             interior cell -> same area (ghost -1 <-> cell 0, ghost -2 <-> cell 1).
+           The four corner ghost blocks are never used and stay NaN.
+        */
+        for (int j = 0; j < m.njc; ++j) {
+            for (int g = 1; g <= NG; ++g) {
+                m.vol[m.cell(-g, j)] = m.vol[m.cell(m.nic - g, j)];        // left of the cut = last cells
+                m.vol[m.cell(m.nic - 1 + g, j)] = m.vol[m.cell(g - 1, j)]; // right of the cut = first cells
+            }
+        }
+        for (int i = 0; i < m.nic; ++i) {
+            for (int g = 1; g <= NG; ++g) {
+                m.vol[m.cell(i, -g)] = m.vol[m.cell(i, g - 1)];                 // wall mirror
+                m.vol[m.cell(i, m.njc - 1 + g)] = m.vol[m.cell(i, m.njc - g)]; // farfield mirror
+            }
+        }
+
+        /*
            i-faces: edge vector t = node(i,j+1) - node(i,j) runs along +j.
            Normal = transpose of the edge vector (slide 21): (ty, -tx) / |t|,
            which points towards +i, i.e. from cell (i-1, j) to cell (i, j).

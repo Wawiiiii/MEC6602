@@ -1,0 +1,21 @@
+# Case file for the HW2 Euler solver. Run from the HW2 folder:
+#   ./build/Release/euler.exe cases/example.txt
+# One "key = value" per line; '#' starts a comment. Only mesh, mach and alpha are required.
+
+# --- Grid and flow ---
+mesh  = grids/65x65.x      # plot3D grid, path relative to the folder the program is run from
+mach  = 0.5                # free-stream Mach number
+alpha = 1.25               # angle of attack, degrees
+
+# --- Scheme ---
+order  = 2                 # spatial order: 1 or 2 (Roe + MUSCL / Hemker-Koren)
+stages = 5                 # 1 = explicit Euler, 3/4/5 = multistage RK of basic_algo slide 18
+cfl    = 0                 # 0 = slide 18 value (5 stages: 2.5 at 1st order, 1.15 at 2nd order)
+
+# --- Convergence ---
+max_iter = 100000          # iteration limit
+tol      = 1e-12           # stop when the density residual has dropped by this factor
+
+# --- Output ---
+history     = history_65_M05_a125.dat   # residual history: iteration, ||R_rho||, drop, seconds
+print_every = 2000                      # print one line every N iterations (0 = never)
