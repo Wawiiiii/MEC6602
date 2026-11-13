@@ -1,5 +1,6 @@
 #include "bc.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace euler {
@@ -74,16 +75,6 @@ namespace euler {
 
     void apply_bc(const Mesh& m, Flow& f, const Freestream& fs, JminBc jmin)
     {
-        // i-cut: cell (-g, j) is cell (nic-g, j), cell (nic-1+g, j) is cell (g-1, j).
-        for (int k = 0; k < NEQ; ++k) {
-            for (int j = 0; j < m.njc; ++j) {
-                for (int g = 1; g <= NG; ++g) {
-                    f.W[k][m.cell(-g, j)] = f.W[k][m.cell(m.nic - g, j)];
-                    f.W[k][m.cell(m.nic - 1 + g, j)] = f.W[k][m.cell(g - 1, j)];
-                }
-            }
-        }
-
         /*
         Farfield ghost from the boundary state: W_g = 2 Wb - Wd (conservative), both layers.
         (nx, ny) must point out of the domain.
@@ -130,10 +121,41 @@ namespace euler {
             }
             cons_to_prim(wi, qi);
             wall_ghost(qi, m.njx[fw], m.njy[fw], qg);
+            if (WALL_PRESSURE_EXTRAPOLATE && WALL_EXTRAP_ACTIVE) {
+                // Study option (bc.h): ghost pressure extrapolated from cells (i, 0) and (i, 1).
+                const int c1 = m.cell(i, 1); // second cell off the wall
+                double w1[NEQ];              // its conservative state
+                double q1[NEQ];              // its primitive state
+                for (int k = 0; k < NEQ; ++k) {
+                    w1[k] = f.W[k][c1];
+                }
+                cons_to_prim(w1, q1);
+                /*
+                Only the pressure changes: rho_g = rho_i and the mirrored velocity are kept, so the
+                face average 1/2 (W_g + W_i) still has exactly zero normal momentum (no mass or energy
+                through the wall). (A first version also changed rho_g isentropically: that leaked mass.)
+                */
+                qg[3] = std::max(2.0 * qi[3] - q1[3], 0.2 * qi[3]); // extrapolated, kept positive
+            }
             prim_to_cons(qg, wg);
             for (int k = 0; k < NEQ; ++k) {
                 f.W[k][m.cell(i, -1)] = wg[k]; // ghost 1 (slide: cell 1)
                 f.W[k][m.cell(i, -2)] = wg[k]; // ghost 2 (slide: cell 0), same rho and p as cell 2
+            }
+        }
+
+        /*
+        i-cut, done last: cell (-g, j) is cell (nic-g, j), cell (nic-1+g, j) is cell (g-1, j).
+        The copy also runs over the ghost rows j < 0 and j >= njc, which were just filled above:
+        this fills the corner ghost blocks with the wall / farfield ghosts of the cells across
+        the cut (needed by the cell -> node interpolation of the output at the TE nodes).
+        */
+        for (int k = 0; k < NEQ; ++k) {
+            for (int j = -NG; j < m.njc + NG; ++j) {
+                for (int g = 1; g <= NG; ++g) {
+                    f.W[k][m.cell(-g, j)] = f.W[k][m.cell(m.nic - g, j)];
+                    f.W[k][m.cell(m.nic - 1 + g, j)] = f.W[k][m.cell(g - 1, j)];
+                }
             }
         }
     }

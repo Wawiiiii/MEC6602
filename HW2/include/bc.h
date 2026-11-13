@@ -45,6 +45,30 @@ namespace euler {
     */
     void farfield_state(const double qd[NEQ], const double qa[NEQ], double nx, double ny, double qb[NEQ]);
 
+    /*
+       Wall ghost pressure (case-file key wall_pressure):
+         false ("mirror", slide 14): p_g = p_i (P1 = P2), i.e. dp/dn = 0 at the wall;
+         true ("extrapolated", DEFAULT): p_g = 2 p_0 - p_1 from the first two cells off the wall
+               (linear extrapolation, so the wall-face average is the pressure extrapolated to the
+               wall); rho_g = rho_0 and the mirrored velocity are kept, so no mass crosses the wall.
+       On a curved wall dp/dn = rho V^2 / R != 0, so the slide's dp/dn = 0 is only first-order accurate:
+       with it CM converges at order ~1 and CL at ~1.5; with the extrapolation CL, CD, CM all converge
+       at order >= 2 (DEVIATIONS.md A20, grid study 129 / 257 / 513 at M = 0.5).
+    */
+    inline bool WALL_PRESSURE_EXTRAPOLATE = true;
+
+    /*
+       Start-up of the extrapolated wall pressure (only used when WALL_PRESSURE_EXTRAPOLATE is true):
+       the solvers use the mirror ghost (slide 14) until the density residual has dropped by
+       WALL_EXTRAP_SWITCH (1 = extrapolated from the first iteration, default), then switch to the
+       extrapolated ghost for good. Optional robustness knob; the converged solution only depends on
+       the final BC. (The supersonic cold-start problem found on 257x257 was the starting CFL, fixed by
+       cfl0 = 1, not the wall BC.)
+       WALL_EXTRAP_ACTIVE is the switch state, set by run_explicit / run_implicit; apply_bc reads it.
+    */
+    inline double WALL_EXTRAP_SWITCH = 1.0;
+    inline bool WALL_EXTRAP_ACTIVE = true;
+
     // What sits at jmin: the airfoil wall, or (slide 20 sanity check only) a farfield.
     enum class JminBc {
         Wall,
@@ -60,7 +84,8 @@ namespace euler {
                             in conservative variables, W_g = 2 Wb - Wd (slide 16, last line),
                             so that the boundary-face average 1/2 (W_g + W_d) is exactly Wb.
                             The second farfield ghost layer = the first one.
-       The corner ghost blocks (ghost in i AND in j) are never used and stay as they are.
+       The i-cut copy is done last and also covers the ghost rows, so the corner ghost blocks
+       (ghost in i AND in j) hold the wall / farfield ghosts of the cells across the cut.
        Updates f.W only; compute_residual() derives f.Q from it.
     */
     void apply_bc(const Mesh& m, Flow& f, const Freestream& fs, JminBc jmin = JminBc::Wall);

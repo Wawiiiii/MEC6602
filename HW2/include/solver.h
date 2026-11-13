@@ -2,9 +2,12 @@
 
 #include "bc.h"
 #include "flow.h"
+#include "forces.h"
 #include "mesh.h"
 #include "residual.h"
 
+#include <chrono>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -57,19 +60,60 @@ namespace euler {
         JminBc jmin = JminBc::Wall;      // jmin boundary (Farfield only for the slide 20 check)
         int max_iter = 100000;           // iteration limit
         double tol_drop = 1e-12;         // stop when ||R_rho|| / ||R_rho||_0 < tol_drop
+        int cauchy_window = 0;           // force (Cauchy) criterion window N in iterations (0 = off)
+        double cauchy_tol = 1e-6;        // Cauchy criterion: max - min of CL, CD, CM over the window < tol
+        ForceRef ref;                    // chord and moment reference point for CL, CD, CM
         int print_every = 0;             // print one line every N iterations (0 = never)
-        std::string history_file;        // residual history file (empty = none)
+        std::string history_file;        // residual / force history file (empty = none)
     };
 
-    // What a run did.
-    struct ExplicitResult {
+    // What a run did (explicit or implicit).
+    struct RunResult {
         int iterations = 0;            // iterations done
         double res0 = 0.0;             // ||R_rho|| at the first iteration
         double res = 0.0;              // ||R_rho|| at the last iteration
-        bool converged = false;        // tolerance reached
+        bool converged = false;        // residual drop reached
+        bool cauchy = false;           // force criterion reached
         bool diverged = false;         // NaN or Inf in the residual
         double seconds = 0.0;          // wall-clock time of the iterations
         std::vector<double> history;   // ||R_rho|| of every iteration
+        std::vector<double> cl;        // CL of every iteration
+        std::vector<double> cd;        // CD of every iteration
+        std::vector<double> cm;        // CM of every iteration
+        Forces forces;                 // forces of the last iteration
+    };
+    using ExplicitResult = RunResult;
+
+    /*
+       Convergence monitoring (post.pdf slides 4-5), shared by the explicit and implicit solvers:
+         - L2 norm of the density residual: stop when it has dropped by tol_drop;
+         - Cauchy criterion on the forces: stop when, over the last cauchy_window iterations,
+           max - min of CL, CD and CM are all below cauchy_tol (|F_m - F_n| < eps for all m, n);
+         - NaN / Inf in the residual: stop, "diverged".
+       Also writes the history file (iteration, ||R_rho||, drop, CL, CD, CM, seconds) and prints.
+    */
+    class Monitor {
+    public:
+        Monitor(int max_iter, double tol_drop, int cauchy_window, double cauchy_tol, int print_every,
+                const std::string& history_file);
+        ~Monitor();
+        Monitor(const Monitor&) = delete;
+        Monitor& operator=(const Monitor&) = delete;
+
+        // Record iteration it; returns true when the run must stop (flags set in r).
+        bool record(int it, double norm, const Forces& F, RunResult& r);
+
+        // Seconds since the monitor was created.
+        double seconds() const;
+
+    private:
+        int max_iter_;                             // iteration limit
+        double tol_drop_;                          // residual drop to reach
+        int window_;                               // Cauchy window (0 = off)
+        double cauchy_tol_;                        // Cauchy tolerance
+        int print_every_;                          // print period (0 = never)
+        std::FILE* hist_ = nullptr;                // history file
+        std::chrono::steady_clock::time_point t0_; // start time
     };
 
     /*
@@ -80,6 +124,6 @@ namespace euler {
          2. stages k = 1 .. m: W(k) = W(0) - alpha_k dt/Omega R(W(k-1)), with apply_bc before each R
        The residual norm of the iteration is the one of W^n (stage 1).
     */
-    ExplicitResult run_explicit(const Mesh& m, Flow& f, const Freestream& fs, const ExplicitSettings& s);
+    RunResult run_explicit(const Mesh& m, Flow& f, const Freestream& fs, const ExplicitSettings& s);
 
 }

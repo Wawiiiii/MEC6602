@@ -4,7 +4,12 @@
 
 namespace euler {
 
-    constexpr double LIMITER_K = 5.0; // constant K of the limiter eps = (K h)^3
+    /*
+       Constant K of the limiter eps = (K h)^3. Default 5 (DEVIATIONS.md A14). It can be changed from
+       the case file (key limiter_k) for studies: a very large K switches the limiter off (pure
+       kappa = 1/3 MUSCL), only acceptable for smooth (subsonic) flow.
+    */
+    inline double LIMITER_K = 5.0;
 
     /*
        Limiter eps of a cell of area Omega: eps = (K h)^3, h = sqrt(Omega) the cell size

@@ -1,5 +1,6 @@
 #include "solver.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -87,52 +88,106 @@ namespace euler {
         return std::sqrt(sum / (static_cast<double>(m.nic) * m.njc));
     }
 
-    ExplicitResult run_explicit(const Mesh& m, Flow& f, const Freestream& fs, const ExplicitSettings& s)
+    Monitor::Monitor(int max_iter, double tol_drop, int cauchy_window, double cauchy_tol, int print_every,
+                     const std::string& history_file)
+        : max_iter_(max_iter), tol_drop_(tol_drop), window_(cauchy_window), cauchy_tol_(cauchy_tol),
+          print_every_(print_every), t0_(std::chrono::steady_clock::now())
     {
-        ExplicitResult res;
-        std::vector<double> dt;                // local time step of each cell
+        if (!history_file.empty()) {
+            hist_ = std::fopen(history_file.c_str(), "w");
+            if (!hist_) {
+                throw std::runtime_error("cannot open history file: " + history_file);
+            }
+            std::fprintf(hist_, "# iteration  ||R_rho||  ||R_rho||/||R_rho||_0  CL  CD  CM  seconds\n");
+        }
+    }
+
+    Monitor::~Monitor()
+    {
+        if (hist_) {
+            std::fclose(hist_);
+        }
+    }
+
+    double Monitor::seconds() const
+    {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0_).count();
+    }
+
+    bool Monitor::record(int it, double norm, const Forces& F, RunResult& r)
+    {
+        if (it == 1) {
+            r.res0 = norm;
+        }
+        r.res = norm;
+        r.iterations = it;
+        r.forces = F;
+        r.history.push_back(norm);
+        r.cl.push_back(F.cl);
+        r.cd.push_back(F.cd);
+        r.cm.push_back(F.cm);
+        r.seconds = seconds();
+
+        if (hist_) {
+            std::fprintf(hist_, "%d %.10e %.10e %.12e %.12e %.12e %.4f\n", it, norm, norm / r.res0, F.cl, F.cd, F.cm,
+                         r.seconds);
+        }
+        if (print_every_ > 0 && (it == 1 || it % print_every_ == 0)) {
+            std::printf("  it %7d  ||R_rho|| %.4e  drop %.3e  CL %.6f  CD %.6f  CM %.6f  %.1f s\n", it, norm,
+                        norm / r.res0, F.cl, F.cd, F.cm, r.seconds);
+        }
+
+        if (!std::isfinite(norm)) {
+            r.diverged = true;
+            return true;
+        }
+        if (norm <= tol_drop_ * r.res0 || norm == 0.0) {
+            r.converged = true;
+            return true;
+        }
+        // Cauchy criterion: max - min of CL, CD, CM over the last window_ iterations.
+        if (window_ > 0 && static_cast<int>(r.cl.size()) >= window_) {
+            bool ok = true;
+            for (const std::vector<double>* h : {&r.cl, &r.cd, &r.cm}) {
+                double lo = 1e300;  // smallest value in the window
+                double hi = -1e300; // largest value in the window
+                for (size_t k = h->size() - window_; k < h->size(); ++k) {
+                    lo = std::min(lo, (*h)[k]);
+                    hi = std::max(hi, (*h)[k]);
+                }
+                ok = ok && (hi - lo < cauchy_tol_);
+            }
+            if (ok) {
+                r.cauchy = true;
+                return true;
+            }
+        }
+        // The iteration limit is the loop bound of the solvers: iteration max_iter still does its update.
+        return false;
+    }
+
+    RunResult run_explicit(const Mesh& m, Flow& f, const Freestream& fs, const ExplicitSettings& s)
+    {
+        RunResult res;
+        std::vector<double> dt;                  // local time step of each cell
         std::array<std::vector<double>, NEQ> W0; // W(0) = W^n, kept over the stages
         for (int k = 0; k < NEQ; ++k) {
             W0[k].resize(f.W[k].size());
         }
+        Monitor mon(s.max_iter, s.tol_drop, s.cauchy_window, s.cauchy_tol, s.print_every, s.history_file);
+        WALL_EXTRAP_ACTIVE = WALL_EXTRAP_SWITCH >= 1.0; // extrapolated wall ghost from the start or later (bc.h)
 
-        std::FILE* hist = nullptr; // residual history file
-        if (!s.history_file.empty()) {
-            hist = std::fopen(s.history_file.c_str(), "w");
-            if (!hist) {
-                throw std::runtime_error("cannot open history file: " + s.history_file);
-            }
-            std::fprintf(hist, "# iteration  ||R_rho||  ||R_rho||/||R_rho||_0  seconds\n");
-        }
-
-        const auto t0 = std::chrono::steady_clock::now();
         for (int it = 1; it <= s.max_iter; ++it) {
-            // 1. residual and time step of W^n.
+            // 1. residual, time step and forces of W^n (ghosts up to date for the wall pressure).
             apply_bc(m, f, fs, s.jmin);
             compute_residual(m, f, s.order);
             local_time_step(m, f, s.rk.cfl, dt);
             const double norm = density_residual_norm(m, f);
-            if (it == 1) {
-                res.res0 = norm;
-            }
-            res.res = norm;
-            res.iterations = it;
-            res.history.push_back(norm);
-
-            const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-            if (hist) {
-                std::fprintf(hist, "%d %.10e %.10e %.4f\n", it, norm, norm / res.res0, secs);
-            }
-            if (s.print_every > 0 && (it == 1 || it % s.print_every == 0)) {
-                std::printf("  it %7d  ||R_rho|| %.4e  drop %.3e  %.1f s\n", it, norm, norm / res.res0, secs);
-            }
-            if (!std::isfinite(norm)) {
-                res.diverged = true;
+            if (mon.record(it, norm, compute_forces(m, f, fs, s.ref), res)) {
                 break;
             }
-            if (norm <= s.tol_drop * res.res0 || norm == 0.0) {
-                res.converged = true;
-                break;
+            if (WALL_PRESSURE_EXTRAPOLATE && !WALL_EXTRAP_ACTIVE && norm <= WALL_EXTRAP_SWITCH * res.res0) {
+                WALL_EXTRAP_ACTIVE = true; // from the next stage on
             }
 
             // 2. stages. W(0) = W^n on the physical cells.
@@ -155,10 +210,6 @@ namespace euler {
                     }
                 }
             }
-        }
-        res.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-        if (hist) {
-            std::fclose(hist);
         }
         // Leave the ghosts consistent with the final W (for outputs).
         apply_bc(m, f, fs, s.jmin);

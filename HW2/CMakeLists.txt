@@ -27,6 +27,11 @@ add_library(euler2d
     src/residual.cpp
     src/bc.cpp
     src/solver.cpp
+    src/forces.cpp
+    src/jacobian.cpp
+    src/linsolve.cpp
+    src/implicit.cpp
+    src/multigrid.cpp
 )
 target_include_directories(euler2d PUBLIC include)
 
@@ -53,3 +58,23 @@ target_link_libraries(euler PRIVATE euler2d)
 # Step 5 check: explicit Euler / multistage RK with local time stepping (basic_algo slides 17-18).
 add_executable(test_explicit tests/test_explicit.cpp)
 target_link_libraries(test_explicit PRIVATE euler2d)
+
+# Step 6 check: forces, moment, surface Cp, Tecplot field, Cauchy criterion (post.pdf slides 4-5, 16-18).
+add_executable(test_output tests/test_output.cpp)
+target_link_libraries(test_output PRIVATE euler2d)
+
+# Step 7a check: first-order Roe Jacobian blocks (Roe_scheme_accel slides 26-30).
+add_executable(test_jacobian tests/test_jacobian.cpp)
+target_link_libraries(test_jacobian PRIVATE euler2d)
+
+# Step 7b check: block SGS and GMRES linear solvers (Roe_scheme_accel slides 32-40).
+add_executable(test_linsolve tests/test_linsolve.cpp)
+target_link_libraries(test_linsolve PRIVATE euler2d)
+
+# Step 7c check: implicit BDF1 / BDF2 / ROW with JFNK-GMRES vs the explicit solution (slides 25-40).
+add_executable(test_implicit tests/test_implicit.cpp)
+target_link_libraries(test_implicit PRIVATE euler2d)
+
+# Step 8 check: FAS multigrid, V / W cycles, RK and SGS smoothers, FMG (slides 41-53).
+add_executable(test_multigrid tests/test_multigrid.cpp)
+target_link_libraries(test_multigrid PRIVATE euler2d)

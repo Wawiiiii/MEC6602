@@ -9,13 +9,44 @@ alpha = 1.25               # angle of attack, degrees
 
 # --- Scheme ---
 order  = 2                 # spatial order: 1 or 2 (Roe + MUSCL / Hemker-Koren)
+scheme = bdf1              # rk (explicit RK), bdf1 (implicit Euler), bdf2, row (Rosenbrock-Wanner ROS2)
+
+# explicit only (scheme = rk)
 stages = 5                 # 1 = explicit Euler, 3/4/5 = multistage RK of basic_algo slide 18
 cfl    = 0                 # 0 = slide 18 value (5 stages: 2.5 at 1st order, 1.15 at 2nd order)
 
+# implicit only (scheme = bdf1, bdf2, row)
+linear_solver  = gmres     # gmres (Jacobian-free Newton-Krylov, slides 39-40) or sgs (block SGS only, slide 33)
+cfl0           = 1         # CFL ramp sigma = cfl0 ||R0||/||R|| (slide 40) ...
+cfl_max        = 1e8       # ... clamped to [cfl0, cfl_max]; with sgs use ~50
+gmres_restart  = 30        # Krylov subspace size before restart (slide 39: 20-50); 50 on 513 and finer
+gmres_max_iter = 60        # GMRES iterations per linear solve; 150-300 on 513 and finer
+gmres_rtol     = 1e-3      # GMRES relative tolerance (inexact Newton)
+sgs_sweeps     = 2         # SGS sweeps: preconditioner of GMRES, or the solver itself with sgs
+sgs_omega      = 1.0       # SGS relaxation factor
+max_change     = 0.5       # update limiter: largest relative change of rho and p in one iteration
+# (cfl0 = 1 is needed for supersonic cold starts on fine grids; 10 is faster for subsonic cases)
+
+# --- Wall boundary condition ---
+wall_pressure      = extrapolated   # extrapolated (2 p0 - p1, gives order 2 for CL/CD/CM) or mirror (slide 14)
+wall_extrap_switch = 1              # 1 = extrapolated from the start; e.g. 1e-3 = mirror until the residual dropped 1e-3
+limiter_k          = 5              # limiter eps = (K h)^3; very large (1e6) = no limiting (smooth subsonic studies only)
+
 # --- Convergence ---
-max_iter = 100000          # iteration limit
-tol      = 1e-12           # stop when the density residual has dropped by this factor
+max_iter      = 100        # iteration limit (implicit: ~10-30 needed; explicit RK: ~1e4-1e5)
+tol           = 1e-12      # stop when the density residual has dropped by this factor
+cauchy_window = 0          # Cauchy criterion on CL, CD, CM: window in iterations (0 = off), post.pdf slide 5
+cauchy_tol    = 1e-6       # stop when max - min of CL, CD and CM over the window are all below this
+
+# --- Force reference ---
+chord = 1.0                # reference chord (the grids' trailing edge is at x = 1.00893)
+xref  = 0.25               # moment reference point (quarter chord)
+yref  = 0.0
 
 # --- Output ---
-history     = history_65_M05_a125.dat   # residual history: iteration, ||R_rho||, drop, seconds
-print_every = 2000                      # print one line every N iterations (0 = never)
+history     = history_65_M05_a125.dat   # iteration, ||R_rho||, drop, CL, CD, CM, seconds
+surface     = surface_65_M05_a125.dat   # x/c, y/c, Cp, p on the wall ("none" to skip)
+field       = field_65_M05_a125.dat     # Tecplot field file, node values ("none" to skip)
+print_every = 1                         # print one line every N iterations (0 = never); ~2000 for rk
+
+# Plots (Python): python post/plot_results.py --history <history> --surface <surface> --field <field> --out plots

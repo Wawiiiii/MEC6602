@@ -15,6 +15,10 @@ main_part_1
 *.csv
 *.dat
 *.png
+# HW2 results are kept in git (history, surface, plots), except the large Tecplot field files
+!HW2/results/**/*.dat
+!HW2/results/**/*.png
+HW2/results/**/field.dat
 # Python
 .venv/
 __pycache__/
