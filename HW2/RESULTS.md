@@ -35,16 +35,52 @@ Observed order p (Newton iteration on G(p), post.pdf slides 26-28) and extrapola
 
 - CL, CM: second order (p 2.3-2.6) on the fine grids. CL_inf = 0.17936, CM_inf = -0.002251.
 - CD: drops at second order, but tends to a small non-zero limit ~2e-5 (so p with "exact = 0" falls
-  to 1.1 on 512->1024). Lift-related farfield effect (no vortex correction, post.pdf slide 22): at
-  alpha = 0 CD -> 0 with no floor:
+  to 1.1 on 512->1024). Mostly a lift-related farfield effect (no vortex correction, post.pdf slide 22),
+  but alpha = 0 also shows a much smaller floor (~2.4e-6) once the 2049 grid is included:
 
-| alpha = 0, grid | CD | p (CD exact = 0) |
-|---|---|---|
-| 129x129 | 0.00163901 | |
-| 257x257 | 0.00026045 | 2.65 |
-| 513x513 | 0.00003854 | 2.76 |
-| 1025x1025 | (see §6) | |
+M = 0.5, alpha = 0, BDF1 + GMRES (raw files `results/Mach_05_alpha_0/`, Linux i9-10850K, 20 threads;
+2049 with an FMG start, 4 levels). CL and CM are at machine zero (|CL| < 3e-11, |CM| < 2e-12) on every grid.
 
+| grid (nodes) | CD | iterations | time | p_bar = log2(CD_m / CD_f) |
+|---|---|---|---|---|
+| 9x9 | 5.1541044652e-02 | 10 | 0.02 s | |
+| 17x17 | 3.8128139493e-02 | 12 | 0.02 s | 0.44 |
+| 33x33 | 1.9426246278e-02 | 14 | 0.08 s | 0.97 |
+| 65x65 | 7.4979461589e-03 | 17 | 0.38 s | 1.37 |
+| 129x129 | 1.6390067028e-03 | 20 | 2.0 s | 2.19 |
+| 257x257 | 2.6045381790e-04 | 28 | 15 s | 2.65 |
+| 513x513 | 3.8539518911e-05 | 36 | 174 s | 2.76 |
+| 1025x1025 | 6.3291277464e-06 | 45 | 1749 s | 2.61 |
+| 2049x2049 | 2.8252782947e-06 | 21 (+ FMG) | 13106 s | 1.16 |
+
+| triplet (cells) | R | p | CD* |
+|---|---|---|---|
+| 64-128-256 | 0.2353 | 2.09 | -1.64e-4 |
+| 128-256-512 | 0.1610 | 2.64 | -4.04e-6 |
+| 256-512-1024 | 0.1452 | 2.78 | 8.60e-7 |
+| 512-1024-2048 | 0.1088 | 3.20 | **2.40e-6** |
+
+  CD* from the three finest grids = 2.40e-6 (not 0, the exact value for subsonic inviscid flow).
+  p = 3.2 is above the formal order 2: the 2048 grid already feels the floor, so the finest triplet is
+  not cleanly asymptotic. Since alpha = 0 carries no circulation, this floor is not the missing
+  point vortex; its source is still open (candidates: finite farfield, limiter near the LE/TE,
+  wall-pressure extrapolation).
+
+- Comparison with V&J 2010 continuum values (Table 10; C_ref = 1, X_ref = 0.25 as here):
+
+| solver | farfield vortex | CL* | CD* | CM* |
+|---|---|---|---|---|
+| this code (256-512-1024) | no | 0.179360 | ~2e-5 | -0.0022510 |
+| CFL3D | no | 0.179784 | 1.22e-5 | -0.0022706 |
+| OVERFLOW | no | 0.179777 | 1.00e-5 | -0.0022626 |
+| CFL3D | yes | 0.180352 | -1.3e-7 | -0.0022774 |
+| FLO82 | yes | 0.180346 | 5.0e-8 | -0.0022688 |
+
+  The codes without the point vortex all land near CL 0.1798 with a small positive drag floor; with the
+  vortex CL rises by ~0.0006 and CD -> 0 (V&J conclusions). This code sits with the no-vortex group,
+  which supports the farfield explanation of the CD floor (B11). V&J also find FLO82 pre-asymptotic below
+  512x512, like our 64-128-256 triplet. Our CL, CM orders (2.3-2.6) match FLO82's (2.1); CFL3D and
+  OVERFLOW are first order for CL and CM.
 - Same grids with the slide-14 wall (P1 = P2, "mirror"): CL p = 1.49, CM p ~ 1.0 -> reason for A20.
 - 513x513 solution: stagnation Cp = 1.0639 (isentropic value at M 0.5: 1.0638), suction peak
   Cp = -0.721 at x/c ~ 0.06, entropy error |s/s_inf - 1| < 8e-3 (max at the leading edge).
