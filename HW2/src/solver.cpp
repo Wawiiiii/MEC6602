@@ -126,6 +126,19 @@ namespace euler {
         return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0_).count();
     }
 
+    void Monitor::set_extra_columns(const std::string& header)
+    {
+        extra_header_ = header;
+    }
+
+    void Monitor::end_row()
+    {
+        if (row_open_) {
+            std::printf("\n");
+            row_open_ = false;
+        }
+    }
+
     bool Monitor::record(int it, double norm, const Forces& F, RunResult& r)
     {
         if (it == 1) {
@@ -144,17 +157,30 @@ namespace euler {
             std::fprintf(hist_, "%d %.10e %.10e %.12e %.12e %.12e %.4f\n", it, norm, norm / r.res0, F.cl, F.cd, F.cm,
                          r.seconds);
         }
+        // Terminal: one row per printed iteration, in columns under a header printed once.
         if (print_every_ > 0 && (it == 1 || it % print_every_ == 0)) {
-            std::printf("  it %7d  ||R_rho|| %.4e  drop %.3e  CL %.6f  CD %.6f  CM %.6f  %.1f s\n", it, norm,
-                        norm / r.res0, F.cl, F.cd, F.cm, r.seconds);
+            if (!header_printed_) {
+                std::printf("\n%7s %11s %10s %14s %14s %14s %9s%s\n", "iter", "||R_rho||", "drop", "CL", "CD", "CM",
+                            "time_s", extra_header_.c_str());
+                header_printed_ = true;
+            }
+            std::printf("%7d %11.4e %10.3e %14.6e %14.6e %14.6e %9.2f", it, norm, norm / r.res0, F.cl, F.cd, F.cm,
+                        r.seconds);
+            if (extra_header_.empty()) {
+                std::printf("\n");
+            } else {
+                row_open_ = true; // the solver adds its columns, then calls end_row()
+            }
         }
 
         if (!std::isfinite(norm)) {
             r.diverged = true;
+            end_row();
             return true;
         }
         if (norm <= tol_drop_ * r.res0 || norm == 0.0) {
             r.converged = true;
+            end_row();
             return true;
         }
         // Cauchy criterion: max - min of CL, CD, CM over the last window_ iterations.
@@ -171,6 +197,7 @@ namespace euler {
             }
             if (ok) {
                 r.cauchy = true;
+                end_row();
                 return true;
             }
         }

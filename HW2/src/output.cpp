@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <stdexcept>
 
 namespace euler {
@@ -115,6 +116,43 @@ namespace euler {
             std::fprintf(out, "%.10e %.10e %.10e %.10e\n", 0.5 * (m.x[a] + m.x[b]) / ref.chord,
                          0.5 * (m.y[a] + m.y[b]) / ref.chord, (pw[i] - fs.q[3]) / q_inf, pw[i]);
         }
+        std::fclose(out);
+    }
+
+    void append_run_summary(const std::string& filename, const RunSummary& s, const ForceRef& ref)
+    {
+        std::FILE* out = std::fopen(filename.c_str(), "a"); // append: earlier runs are kept
+        if (!out) {
+            throw std::runtime_error("cannot open summary file: " + filename);
+        }
+
+        // Header only when the file is new (empty).
+        std::fseek(out, 0, SEEK_END);
+        if (std::ftell(out) == 0) {
+            std::fprintf(out, "# HW2 Euler solver - run summary, one line per run (new runs are appended)\n");
+            std::fprintf(out, "# CL, CD, CM : chord %.5f, moment about (%.4f, %.4f), CM nose-up positive\n", ref.chord,
+                         ref.xref, ref.yref);
+            std::fprintf(out, "# time_s     : wall-clock seconds of the solver iterations\n");
+            std::fprintf(out, "# drop       : final / first density residual\n");
+            std::fprintf(out, "# status     : converged (residual drop reached), cauchy (force criterion),\n");
+            std::fprintf(out, "#              max_iter (iteration limit, NOT converged), diverged\n");
+            std::fprintf(out, "#\n");
+            std::fprintf(out, "# %-11s %6s %7s %17s %17s %17s %6s %9s  %-10s %9s  %-11s %5s  %s\n", "grid", "Mach",
+                         "alpha", "CL", "CD", "CM", "iter", "time_s", "status", "drop", "scheme", "order", "date");
+        }
+
+        // Date and time of the end of the run.
+        char date[32];
+        const std::time_t now = std::time(nullptr);
+        std::strftime(date, sizeof(date), "%Y-%m-%d %H:%M", std::localtime(&now));
+
+        char grid[32];
+        std::snprintf(grid, sizeof(grid), "%dx%d", s.ni, s.nj);
+
+        // Forces in scientific notation so that small values (e.g. CD -> 0) keep their digits.
+        std::fprintf(out, "  %-11s %6.3f %7.3f %17.10e %17.10e %17.10e %6d %9.2f  %-10s %9.2e  %-11s %5d  %s\n", grid,
+                     s.mach, s.alpha_deg, s.forces.cl, s.forces.cd, s.forces.cm, s.iterations, s.seconds,
+                     s.status.c_str(), s.drop, s.scheme.c_str(), s.order, date);
         std::fclose(out);
     }
 

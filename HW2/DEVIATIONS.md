@@ -72,7 +72,7 @@ the art"): every item above was checked against the slides, Blazek and usual pra
 Nothing changed in the code from this review.
 
 Still to decide (later steps):
-- Reference chord for CL, CD, CM: 1.0 or the grid's 1.00893 (the TE of the grids is at x = 1.00893).
+- ~~Reference chord for CL, CD, CM~~: resolved, V&J 2010 use C_ref = 1.0 and X_ref = 0.25 (p.1153, 1157).
 - Implicit solver: how |A| is built in the first-order Jacobian (slide 26: T|Lambda|T^-1), and
   whether the boundary conditions enter the implicit operator (slide 30) or are neglected.
 

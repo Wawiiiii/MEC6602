@@ -106,7 +106,20 @@ namespace euler {
         // Seconds since the monitor was created.
         double seconds() const;
 
+        /*
+           Extra columns a solver prints after the standard ones on each terminal row (implicit: CFL,
+           linear iterations, ...). With a non-empty header the rows are left open by record(): the
+           solver prints its own columns, then calls end_row(). record() closes the row itself when
+           the run stops.
+        */
+        void set_extra_columns(const std::string& header);
+        bool row_open() const { return row_open_; } // a row is waiting for the solver's extra columns
+        void end_row();                              // end the open row (no-op if none)
+
     private:
+        std::string extra_header_;     // header of the solver's extra columns ("" = none)
+        bool header_printed_ = false;  // column header already printed
+        bool row_open_ = false;        // last row printed without its end of line
         int max_iter_;                             // iteration limit
         double tol_drop_;                          // residual drop to reach
         int window_;                               // Cauchy window (0 = off)

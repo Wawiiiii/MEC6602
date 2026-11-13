@@ -47,6 +47,8 @@
      history     residual / force history file (iteration, ||R_rho||, drop, CL, CD, CM, s)      [history.dat]
      field       Tecplot field file (node values), "none" to skip                               [field.dat]
      surface     surface Cp file, "none" to skip                                                 [surface_cp.dat]
+     summary     run summary text file: one line appended per run (grid, M, alpha, scheme, status,
+                 iterations, time, CL, CD, CM), "none" to skip                                  [summary.txt]
      print_every print one line every N iterations (0 = never)                                   [500]
    On the command line the same keys are given as --key value (e.g. --order 1 --tol 1e-10).
    Plots: python post/plot_results.py <history> <surface> <field>  (post/plot_results.py).
@@ -201,6 +203,7 @@ int main(int argc, char** argv)
         s.ref.yref = std::stod(take(kv, "yref", "0"));
         const std::string field_file = take(kv, "field", "field.dat");         // Tecplot field output
         const std::string surface_file = take(kv, "surface", "surface_cp.dat"); // surface Cp output
+        const std::string summary_file = take(kv, "summary", "summary.txt");    // one line per run, appended
 
         // Multigrid (scheme = mg) and full multigrid start (any scheme).
         euler::MultigridSettings ms;                                          // multigrid settings
@@ -288,8 +291,6 @@ int main(int argc, char** argv)
         const euler::Freestream fs = euler::make_freestream(mach, alpha);
         euler::init_freestream(f, fs);
 
-        std::printf("OpenMP threads: %d\n", euler::get_threads());
-
         // One run of the chosen solver on a given mesh (used for the FMG coarse grids too).
         auto run_solver = [&](const euler::Mesh& mesh, euler::Flow& flow, double tol, const std::string& hist,
                               int print) {
@@ -314,20 +315,31 @@ int main(int argc, char** argv)
             return euler::run_explicit(mesh, flow, fs, s2);
         };
 
+        // Short solver label (summary file) and a longer description (terminal).
+        std::string label;  // e.g. bdf1-gmres, rk5, mg-w-sgs
+        char solver[160];   // e.g. implicit bdf1 + gmres, CFL 1 -> 1e+08
         if (multigrid) {
-            std::printf("mesh %s (%d x %d), M = %.4f, alpha = %.4f deg, order %d, multigrid %s-cycle, %d levels, "
-                        "smoother %s, fine CFL %.3f\n",
-                        mesh_file.c_str(), m.ni, m.nj, mach, alpha, order, ms.gamma == 1 ? "V" : "W",
-                        euler::multigrid_levels(m, ms), mg_smoother.c_str(),
-                        ms.smoother == euler::MgSmoother::RK ? ms.fine_rk.cfl : ms.sgs_cfl);
-        } else if (!implicit) {
-            std::printf("mesh %s (%d x %d), M = %.4f, alpha = %.4f deg, order %d, explicit RK %d stage(s), CFL %.3f\n",
-                        mesh_file.c_str(), m.ni, m.nj, mach, alpha, order, s.rk.stages, s.rk.cfl);
+            label = "mg-" + mg_cycle + "-" + mg_smoother;
+            std::snprintf(solver, sizeof(solver), "multigrid %s-cycle, %d levels, smoother %s, fine CFL %.3g",
+                          ms.gamma == 1 ? "V" : "W", euler::multigrid_levels(m, ms), mg_smoother.c_str(),
+                          ms.smoother == euler::MgSmoother::RK ? ms.fine_rk.cfl : ms.sgs_cfl);
+        } else if (implicit) {
+            label = scheme + "-" + lin;
+            std::snprintf(solver, sizeof(solver), "implicit %s + %s, CFL %.3g -> %.3g", scheme.c_str(), lin.c_str(),
+                          is.cfl0, is.cfl_max);
         } else {
-            std::printf("mesh %s (%d x %d), M = %.4f, alpha = %.4f deg, order %d, implicit %s + %s, CFL %.3g -> %.3g\n",
-                        mesh_file.c_str(), m.ni, m.nj, mach, alpha, order, scheme.c_str(), lin.c_str(), is.cfl0,
-                        is.cfl_max);
+            label = "rk" + std::to_string(stages);
+            std::snprintf(solver, sizeof(solver), "explicit RK, %d stage(s), CFL %.3g", s.rk.stages, s.rk.cfl);
         }
+
+        // Case block.
+        std::printf("Case\n");
+        std::printf("  mesh          %s  (%d x %d nodes)\n", mesh_file.c_str(), m.ni, m.nj);
+        std::printf("  Mach          %.4f\n", mach);
+        std::printf("  alpha         %.4f deg\n", alpha);
+        std::printf("  order         %d\n", order);
+        std::printf("  solver        %s\n", solver);
+        std::printf("  threads       %d\n", euler::get_threads());
 
         /*
         Full multigrid start for any solver (slide 42): solve on the coarse grids first (coarsest
@@ -355,33 +367,59 @@ int main(int argc, char** argv)
 
         const euler::RunResult r = run_solver(m, f, s.tol_drop, s.history_file, s.print_every);
         const char* status = r.diverged ? "DIVERGED"
-                           : r.converged ? "converged (residual)"
+                           : r.converged ? "converged (residual drop reached)"
                            : r.cauchy ? "converged (Cauchy criterion on the forces)"
-                                      : "not converged (iteration limit)";
-        std::printf("%s after %d iterations, %.2f s: ||R_rho|| %.3e -> %.3e (drop %.2e)\n", status, r.iterations,
-                    r.seconds, r.res0, r.res, r.res / r.res0);
+                                      : "NOT converged (iteration limit)";
 
-        // Outputs: forces, surface Cp, field (run_explicit leaves the ghosts up to date).
+        // Forces from the wall pressure of the solver (the momentum flux through the wall).
         std::vector<double> pw; // wall pressure
         euler::wall_pressure(m, f, pw);
         const euler::Forces F = euler::integrate_forces(m, pw, fs, s.ref);
-        std::printf("CL = %.8f   CD = %.8f   CM = %.8f   (chord %.5f, moment about (%.4f, %.4f))\n", F.cl, F.cd, F.cm,
-                    s.ref.chord, s.ref.xref, s.ref.yref);
-        std::vector<double> pwx; // wall pressure extrapolated from the first two cells (DEVIATIONS.md B6)
+        std::vector<double> pwx; // wall pressure extrapolated from the first two cells (diagnostic, DEVIATIONS.md A16)
         euler::wall_pressure_extrapolated(m, f, pwx);
         const euler::Forces Fx = euler::integrate_forces(m, pwx, fs, s.ref);
-        std::printf("CL = %.8f   CD = %.8f   CM = %.8f   (wall pressure extrapolated from the first two cells)\n",
+
+        // Result block.
+        std::printf("\nResult\n");
+        std::printf("  status        %s\n", status);
+        std::printf("  iterations    %d\n", r.iterations);
+        std::printf("  time          %.2f s\n", r.seconds);
+        std::printf("  residual      %.3e -> %.3e   (drop %.2e)\n", r.res0, r.res, r.res / r.res0);
+        std::printf("  CL            %17.10e\n", F.cl);
+        std::printf("  CD            %17.10e\n", F.cd);
+        std::printf("  CM            %17.10e\n", F.cm);
+        std::printf("  reference     chord %.5f, moment about (%.4f, %.4f)\n", s.ref.chord, s.ref.xref, s.ref.yref);
+        std::printf("  diagnostic    CL %.8e  CD %.8e  CM %.8e  (p extrapolated to the wall in post-processing)\n",
                     Fx.cl, Fx.cd, Fx.cm);
+
+        // Output files.
+        std::printf("\nOutput\n");
         if (!s.history_file.empty()) {
-            std::printf("history  -> %s\n", s.history_file.c_str());
+            std::printf("  history       %s\n", s.history_file.c_str());
         }
         if (surface_file != "none") {
             euler::write_surface_cp(m, pw, fs, s.ref, F, surface_file);
-            std::printf("surface  -> %s\n", surface_file.c_str());
+            std::printf("  surface       %s\n", surface_file.c_str());
         }
         if (field_file != "none") {
             euler::write_tecplot_field(m, f, fs, field_file);
-            std::printf("field    -> %s\n", field_file.c_str());
+            std::printf("  field         %s\n", field_file.c_str());
+        }
+        if (summary_file != "none") {
+            euler::RunSummary rs; // this run, one line of the summary file
+            rs.ni = m.ni;
+            rs.nj = m.nj;
+            rs.mach = mach;
+            rs.alpha_deg = alpha;
+            rs.order = order;
+            rs.scheme = label;
+            rs.status = r.diverged ? "diverged" : r.converged ? "converged" : r.cauchy ? "cauchy" : "max_iter";
+            rs.iterations = r.iterations;
+            rs.seconds = r.seconds;
+            rs.drop = r.res / r.res0;
+            rs.forces = F;
+            euler::append_run_summary(summary_file, rs, s.ref);
+            std::printf("  summary       %s  (line appended)\n", summary_file.c_str());
         }
         return r.diverged ? 2 : 0;
     }

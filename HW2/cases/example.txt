@@ -47,6 +47,7 @@ yref  = 0.0
 history     = history_65_M05_a125.dat   # iteration, ||R_rho||, drop, CL, CD, CM, seconds
 surface     = surface_65_M05_a125.dat   # x/c, y/c, Cp, p on the wall ("none" to skip)
 field       = field_65_M05_a125.dat     # Tecplot field file, node values ("none" to skip)
+summary     = summary.txt               # one line appended per run: grid, M, alpha, scheme, status, iterations, time, CL, CD, CM ("none" to skip)
 print_every = 1                         # print one line every N iterations (0 = never); ~2000 for rk
 
 # Plots (Python): python post/plot_results.py --history <history> --surface <surface> --field <field> --out plots

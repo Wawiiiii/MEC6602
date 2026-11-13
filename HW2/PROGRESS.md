@@ -40,7 +40,7 @@ Convergence monitoring: L2 norm of the density residual + Cauchy criterion on th
   class algorithms must be justified; we want none. When the slides give options,
   pick among those; if something is not in the slides, flag it, do not import it.
 - **Second order only.** The spatial scheme must be second order.
-  **Hard requirement (user, 2026-11-13): the grid convergence study (GCI / order p by Newton
+  **Hard requirement (user, 2026-11-13): the grid convergence study (order p by Newton
   iteration, post.pdf slides 26-28) must show p ~ 2 for the forces, like the Vassberg & Jameson
   reference.** Status: CD order 65->129 ~ 1.75 with RK (DEVIATIONS A14 table); to be measured on
   65/129/257 with the implicit solver, and fixed if < 2 (suspects: wall pressure B6, limiter B1).
@@ -368,6 +368,14 @@ For comparison with the slide-14 mirror wall (same grids 128-256-512): CL p = 1.
   the serial SGS preconditioner now dominates). All test suites pass with OpenMP.
 - Possible next step: multicolour (red-black / diagonal) ordering to parallelise the SGS sweeps.
 
+### Build and run on Linux (from `HW2/`; checked 2026-11-13: GCC + OpenMP, no warnings, all tests pass)
+```bash
+cmake -S . -B build/linux -DCMAKE_BUILD_TYPE=Release && cmake --build build/linux -j 16
+./build/linux/euler grids/129x129.x 0.5 1.25 --scheme bdf1 --history h.dat --surface s.dat --field f.dat
+```
+Tecplot 360 is in `/apps/local/bin/tec360` (preplot in `/apps/local/tecplot_360/2011-x86_64/bin/`); the
+field and surface files load as they are (checked with preplot and a batch render).
+
 ### Build and run (Windows, from `HW2/`)
 ```bash
 cmake -S . -B build && cmake --build build --config Release
@@ -395,8 +403,9 @@ Fine grids: use gmres_restart 50, gmres_max_iter 150 (513) to 300 (2049). 2049x2
 3. ~~Second-order Roe flux with MUSCL~~ written (see §5), awaiting the user's check.
 4. ~~Boundary conditions with ghost cells~~ written (see §5), awaiting the user's check.
 5. ~~Explicit Euler, then multistage RK~~ written (see §5), awaiting the user's check.
-6. ~~Outputs~~ done (see §5). **Open item:** reference chord 1.0 or 1.00893 for the Vassberg &
-   Jameson comparison (case key `chord`).
+6. ~~Outputs~~ done (see §5). Reference chord: **resolved 2026-11-13**, V&J 2010 use C_ref = 1.0 and
+   X_ref = 0.25 although the sharp-TE airfoil ends at x = 1.0089304115 (paper p.1153 and p.1157) =
+   the code defaults (`chord = 1`, `xref = 0.25`).
 7. ~~Implicit solver~~ done (see §5): BDF1 / BDF2 / ROW + GMRES or SGS. Original plan below.
    Remaining: Part 3 report numbers on 1025 / 2049; Part 4 (sub/trans/supersonic analysis on a fine
    grid); Part 5 fixed CL (M 0.8, CL 0.4, secant on alpha, post.pdf slide 9) -> step 8.

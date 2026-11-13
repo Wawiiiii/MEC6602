@@ -99,6 +99,7 @@ namespace euler {
         std::vector<double> k2(n);   // ROW stage 2
         std::vector<double> Rp(n);   // perturbed residual, compact
         Monitor mon(s.max_iter, s.tol_drop, s.cauchy_window, s.cauchy_tol, s.print_every, s.history_file);
+        mon.set_extra_columns("  |       CFL  lin_its   lin_res  update"); // printed after the linear solve
         WALL_EXTRAP_ACTIVE = WALL_EXTRAP_SWITCH >= 1.0; // extrapolated wall ghost from the start or later (bc.h)
 
         for (int it = 1; it <= s.max_iter; ++it) {
@@ -114,6 +115,7 @@ namespace euler {
             }
             if (WALL_PRESSURE_EXTRAPOLATE && !WALL_EXTRAP_ACTIVE && norm <= WALL_EXTRAP_SWITCH * res.res0) {
                 WALL_EXTRAP_ACTIVE = true; // from the next residual on (the CFL ramp follows the residual jump)
+                mon.end_row();             // the message goes on its own line
                 if (s.print_every > 0) {
                     std::printf("           extrapolated wall pressure switched on\n");
                 }
@@ -236,9 +238,10 @@ namespace euler {
             set_plus(m, f.W, 1.0, dW, f.W);
             dWold = dW;
 
-            if (s.print_every > 0 && (it == 1 || it % s.print_every == 0)) {
-                std::printf("           CFL %.3e  linear its %d  lin. rel. res %.2e  update factor %.3f\n", cfl, lin_its,
-                            lin_res, omega);
+            // Extra columns of this iteration's terminal row: CFL, linear iterations, linear residual, update factor.
+            if (mon.row_open()) {
+                std::printf("  | %9.2e %8d %9.2e %7.3f", cfl, lin_its, lin_res, omega);
+                mon.end_row();
             }
         }
         apply_bc(m, f, fs, s.jmin);
