@@ -15,10 +15,10 @@ main_part_1
 *.csv
 *.dat
 *.png
-# HW2 results are kept in git (history, surface, plots), except the large Tecplot field files
-!HW2/results/**/*.dat
-!HW2/results/**/*.png
-HW2/results/**/field.dat
+# HW2 run outputs, agent work folders and temporary run folders stay local (numbers are in HW2/RESULTS.md)
+HW2/results/
+agent_*/
+runs_tmp/
 # Python
 .venv/
 __pycache__/
