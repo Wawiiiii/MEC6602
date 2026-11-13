@@ -136,6 +136,17 @@ namespace euler {
         return n;
     }
 
+    double correction_relax(const MultigridSettings& s, Order level_order)
+    {
+        if (level_order == Order::First) {
+            return 1.0; // first-order level: the coarse operator is the same discretisation, no mismatch
+        }
+        if (s.relax > 0.0) {
+            return s.relax;
+        }
+        return s.smoother == MgSmoother::RK ? 0.5 : 1.0; // automatic (multigrid.h, DEVIATIONS.md B18)
+    }
+
     // ===================================================================== the cycle
 
     namespace {
@@ -314,7 +325,7 @@ namespace euler {
             }
         }
 
-        // Prolongation of the correction from level l+1 to level l (slides 48, 50).
+        // Prolongation of the correction from level l+1 to level l (slides 48, 50), scaled by correction_relax.
         void come_up(std::vector<Level>& L, int l, const MultigridSettings& s)
         {
             Level& F = L[l];
@@ -331,7 +342,9 @@ namespace euler {
                 dW[k].assign(F.f.W[k].size(), 0.0);
                 prolong_bilinear(F.m, C.m, dc, dW[k]);
             }
-            const double omega = change_factor(F, dW, s.max_change);
+            // Under-relaxation of the correction going into a second-order level (DEVIATIONS.md B18).
+            const double relax = correction_relax(s, F.order);
+            const double omega = relax * change_factor(F, dW, s.max_change);
             for (int k = 0; k < NEQ; ++k) {
                 for (int j = 0; j < F.m.njc; ++j) {
                     for (int i = 0; i < F.m.nic; ++i) {
@@ -381,9 +394,10 @@ namespace euler {
             }
         }
         if (s.print_every > 0) {
-            std::printf("  multigrid: %d levels (finest %d x %d, coarsest %d x %d nodes), %s-cycle, smoother %s\n", nlev,
-                        L[0].m.ni, L[0].m.nj, L[nlev - 1].m.ni, L[nlev - 1].m.nj, s.gamma == 1 ? "V" : "W",
-                        s.smoother == MgSmoother::RK ? "RK" : "SGS");
+            std::printf("  multigrid: %d levels (finest %d x %d, coarsest %d x %d nodes), %s-cycle, smoother %s, "
+                        "fine-level correction x %.2f\n",
+                        nlev, L[0].m.ni, L[0].m.nj, L[nlev - 1].m.ni, L[nlev - 1].m.nj, s.gamma == 1 ? "V" : "W",
+                        s.smoother == MgSmoother::RK ? "RK" : "SGS", correction_relax(s, L[0].order));
         }
         WALL_EXTRAP_ACTIVE = true;
 

@@ -14,9 +14,10 @@
    M7 convergence (slides 44, 52-53): same CL, CD, CM as the single-grid explicit solver, far less work;
       W / V cycle, RK / SGS smoother, FMG start (slide 42), on 33x33 and 65x65
    M8 transonic M 0.8: W-cycle converges, same forces as the implicit solver
+   M9 linear stability (DEVIATIONS.md B18 / B19): power iteration on the cycle linearised about the
+      converged solution; |lambda| < 1 with the default settings (RK: correction relax 0.5, SGS: CFL 10)
 
    Usage: test_multigrid <33x33.x> <65x65.x>
-          test_multigrid <33x33.x> <65x65.x> vdebug   (V-cycle diagnostic table only, no checks)
 */
 
 #include "bc.h"
@@ -29,6 +30,7 @@
 #include "solver.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdarg>
@@ -620,26 +622,14 @@ static void test_convergence(const euler::Mesh& m, const std::string& gname)
         rows.push_back(run_mg(m, fs, s, "MG W RK + FMG 10"));
         s.fmg_cycles = 0;
         s.smoother = euler::MgSmoother::SGS;
-        s.sgs_cfl = 20.0;
-        rows.push_back(run_mg(m, fs, s, "MG W SGS (cfl 20)"));
+        rows.push_back(run_mg(m, fs, s, "MG W SGS (cfl 10)"));
         s.gamma = 1;
-        rows.push_back(run_mg(m, fs, s, "MG V SGS (cfl 20)"));
+        rows.push_back(run_mg(m, fs, s, "MG V SGS (cfl 10)"));
     }
 
     check(sg.converged, "M7 %s single-grid RK5 converged: %d it, %.2f s", gname.c_str(), sg.cycles, sg.seconds);
     for (const Row& r : rows) {
-        if (r.name == "MG V RK") {
-            /*
-               Not a check: with the 2nd-order fine / 1st-order coarse operators the V-cycle with the
-               RK smoother stalls at a spurious state (see the vdebug runs: it converges with the same
-               order on every level, with n_pre or n_post = 0, or with half the fine CFL).
-            */
-            std::printf("  [INFO] M7 %s %-18s %s after %d cycles (drop %.2e, CL %.4f) - operator mismatch, "
-                        "see V-cycle consistency check below\n",
-                        gname.c_str(), r.name.c_str(), r.converged ? "converged" : "did NOT converge", r.cycles,
-                        r.drop, r.F.cl);
-            continue;
-        }
+        // Every variant, the V-cycle with the RK smoother included (relax 0.5, DEVIATIONS.md B18).
         double d = 0.0; // largest force difference
         const bool same = same_forces(r, sg, ftol, d);
         check(r.converged && same, "M7 %s %-18s converged in %4d cycles (rate %.3f / cycle), %.2f s; max |dC| vs single grid %.1e",
@@ -708,7 +698,7 @@ static void test_transonic(const euler::Mesh& m)
     s.gamma = 2;
     const Row w = run_mg(m, fs, s, "MG W RK");
     s.smoother = euler::MgSmoother::SGS;
-    const Row ws = run_mg(m, fs, s, "MG W SGS (cfl 20)");
+    const Row ws = run_mg(m, fs, s, "MG W SGS (cfl 10)");
 
     double d = 0.0; // force difference with the implicit solution
     const bool same = ref.converged && same_forces(w, ref, 1e-7, d);
@@ -720,79 +710,209 @@ static void test_transonic(const euler::Mesh& m)
           ws.seconds, ds);
 }
 
+// ===================================================================== M9 linear stability of the cycle
+
+// What the power iteration found.
+struct Mode {
+    double lambda = 0.0;   // |C d| for the converged unit direction d: largest |eigenvalue| of C
+    double rayleigh = 0.0; // <C d, d>: sign of that eigenvalue (-lambda: real negative, overshoot)
+    double te_share = 0.0; // share of |d|^2 in the 4 x 8 wall cells around the trailing edge
+    int imax = -1;         // cell (i, j) of the largest |d rho|
+    int jmax = -1;
+};
+
 /*
-   Diagnostic runs of the V-cycle with the RK smoother (third argument "vdebug", first grid only,
-   M 0.5, alpha 1.25, 600 cycles at most): which ingredient makes the default V-cycle stall
-   (number of levels, smoothing counts, order of the fine / coarse operators, CFL, wall pressure,
-   number of RK stages). No checks, a table only.
+   Power iteration on one cycle C (or one smoothing step) linearised about the converged state ws:
+   C d = (C(ws + eps d) - ws) / eps, ws being a fixed point of C (R_h(ws) = 0, slide 46), and
+   d_{n+1} = C d_n / |C d_n| from a pseudo-random start. After nit iterations |C d| is the
+   spectral radius of the linearised cycle when the dominant eigenvalue is real: > 1 means the
+   cycle cannot converge from close to the solution; a real negative eigenvalue (<C d, d> = -|C d|)
+   flips the error every cycle and saturates into the period-2 limit cycle seen as the "stall".
 */
-static void debug_v(const euler::Mesh& m)
+static Mode power_iteration(const euler::Mesh& m, const euler::Flow& ws, const euler::Freestream& fs,
+                            const euler::MultigridSettings& s0, int nit)
 {
-    const euler::Freestream fs = euler::make_freestream(0.5, 1.25);
-    print_header();
-    struct Case {
-        const char* name; // variant
-        int levels;       // number of levels
-        int gamma;        // 1 V, 2 W
-        int n_pre;        // pre-smoothing
-        int n_post;       // post-smoothing
-        int n_coarse;     // coarsest-level iterations
-        int fo;           // fine order (1 or 2)
-        int co;           // coarse order (1 or 2)
-        double ccfl;      // coarse CFL factor (x the table value)
-        double fcfl;      // fine CFL factor
-        bool wext;        // extrapolated wall pressure
-        int fst;          // fine RK stages
-        int cst;          // coarse RK stages
+    euler::MultigridSettings s = s0;
+    s.max_iter = 1;
+    s.tol_drop = 0.0;
+    s.print_every = 0;
+    const double eps = 1e-7;
+    std::array<std::vector<double>, NEQ> d; // direction
+    unsigned seed = 12345u;
+    for (int k = 0; k < NEQ; ++k) {
+        d[k].assign(ws.W[k].size(), 0.0);
+        for (int j = 0; j < m.njc; ++j) {
+            for (int i = 0; i < m.nic; ++i) {
+                seed = seed * 1103515245u + 12345u;
+                d[k][m.cell(i, j)] = ((seed >> 8) % 2000) / 1000.0 - 1.0;
+            }
+        }
+    }
+    auto nrm = [&](const std::array<std::vector<double>, NEQ>& v) {
+        double s2 = 0.0;
+        for (int k = 0; k < NEQ; ++k) {
+            for (int j = 0; j < m.njc; ++j) {
+                for (int i = 0; i < m.nic; ++i) {
+                    s2 += v[k][m.cell(i, j)] * v[k][m.cell(i, j)];
+                }
+            }
+        }
+        return std::sqrt(s2);
     };
-    const Case cases[] = {
-        {"V lev3", 3, 1, 1, 1, 2, 2, 1, 1.0, 1.0, true, 5, 5},
-        {"V lev3 o1/o1", 3, 1, 1, 1, 2, 1, 1, 1.0, 1.0, true, 5, 5},
-        {"V lev3 o2/o2", 3, 1, 1, 1, 2, 2, 2, 1.0, 1.0, true, 5, 5},
-        {"V lev3 ccfl0.5", 3, 1, 1, 1, 2, 2, 1, 0.5, 1.0, true, 5, 5},
-        {"V lev3 fcfl0.5", 3, 1, 1, 1, 2, 2, 1, 1.0, 0.5, true, 5, 5},
-        {"V lev3 mirror wall", 3, 1, 1, 1, 2, 2, 1, 1.0, 1.0, false, 5, 5},
-        {"V lev3 RK3/RK3", 3, 1, 1, 1, 2, 2, 1, 1.0, 1.0, true, 3, 3},
-        {"V lev2 nc20", 2, 1, 1, 1, 20, 2, 1, 1.0, 1.0, true, 5, 5},
-        {"V lev2 nc20 o2/o2", 2, 1, 1, 1, 20, 2, 2, 1.0, 1.0, true, 5, 5},
-        {"V lev2 nc20 o1/o1", 2, 1, 1, 1, 20, 1, 1, 1.0, 1.0, true, 5, 5},
-        {"V lev2 nc1", 2, 1, 1, 1, 1, 2, 1, 1.0, 1.0, true, 5, 5},
-        {"W lev3 o1/o1", 3, 2, 1, 1, 2, 1, 1, 1.0, 1.0, true, 5, 5},
-    };
-    for (const Case& c : cases) {
+    double n0 = nrm(d);
+    for (int k = 0; k < NEQ; ++k) {
+        for (double& v : d[k]) {
+            v /= n0;
+        }
+    }
+    double lam = 0.0;
+    double dot = 0.0;
+    for (int it = 0; it < nit; ++it) {
+        euler::Flow w = ws;
+        for (int k = 0; k < NEQ; ++k) {
+            for (int j = 0; j < m.njc; ++j) {
+                for (int i = 0; i < m.nic; ++i) {
+                    const int c = m.cell(i, j);
+                    w.W[k][c] += eps * d[k][c];
+                }
+            }
+        }
+        euler::run_multigrid(m, w, fs, s);
+        std::array<std::vector<double>, NEQ> dn;
+        for (int k = 0; k < NEQ; ++k) {
+            dn[k].assign(ws.W[k].size(), 0.0);
+            for (int j = 0; j < m.njc; ++j) {
+                for (int i = 0; i < m.nic; ++i) {
+                    const int c = m.cell(i, j);
+                    dn[k][c] = (w.W[k][c] - ws.W[k][c]) / eps;
+                }
+            }
+        }
+        lam = nrm(dn);
+        dot = 0.0;
+        for (int k = 0; k < NEQ; ++k) {
+            for (int j = 0; j < m.njc; ++j) {
+                for (int i = 0; i < m.nic; ++i) {
+                    const int c = m.cell(i, j);
+                    dot += dn[k][c] * d[k][c];
+                }
+            }
+        }
+        for (int k = 0; k < NEQ; ++k) {
+            for (double& v : dn[k]) {
+                v /= lam;
+            }
+        }
+        d = dn;
+    }
+    // Where the mode lives: largest |d rho| and share of |d|^2 in the 4 wall rows next to the TE.
+    Mode md;
+    md.lambda = lam;
+    md.rayleigh = dot;
+    double dmax = 0.0; // largest |d rho|
+    for (int j = 0; j < m.njc; ++j) {
+        for (int i = 0; i < m.nic; ++i) {
+            const int c = m.cell(i, j);
+            if (std::abs(d[0][c]) > dmax) {
+                dmax = std::abs(d[0][c]);
+                md.imax = i;
+                md.jmax = j;
+            }
+            if (j < 4 && (i < 4 || i >= m.nic - 4)) {
+                for (int k = 0; k < NEQ; ++k) {
+                    md.te_share += d[k][c] * d[k][c];
+                }
+            }
+        }
+    }
+    return md;
+}
+
+static void print_mode(const char* name, const Mode& md)
+{
+    std::printf("    %-40s |lambda| %.4f  <Cd,d> %+.4f  max |d rho| at (%d, %d), TE share of |d|^2 %.2f\n", name,
+                md.lambda, md.rayleigh, md.imax, md.jmax, md.te_share);
+}
+
+/*
+   M9: the two instabilities behind the stalls of DEVIATIONS.md B18 / B19, on 65x65.
+   B18, M 0.5, RK smoother: with the full correction (relax = 1) the V-cycle has a real negative
+     eigenvalue below -1 on a trailing-edge mode (the 2nd-order fine operator is ~2x stiffer there
+     than the 1st-order coarse one); with the automatic relax = 0.5 every cycle is stable.
+   B19, M 0.8, SGS smoother: one SGS step (one level) at CFL 20 has a real negative eigenvalue
+     below -1 (odd-even mode at the leading edge, from the limiter); at the default CFL 10 it is
+     stable, and so is the W-cycle.
+   Lines with "[INFO]" document the unstable reference settings and are not checks.
+*/
+static void test_stability(const euler::Mesh& m)
+{
+    const int nit = 60; // power iterations
+    {
+        const euler::Freestream fs = euler::make_freestream(0.5, 1.25);
+        euler::Flow ws; // converged state
+        euler::allocate_flow(m, ws);
+        euler::init_freestream(ws, fs);
+        euler::ImplicitSettings is;
+        is.tol_drop = 1e-13;
+        is.print_every = 0;
+        euler::run_implicit(m, ws, fs, is);
+        std::printf("  M 0.5, RK smoother, linearised cycle:\n");
         euler::MultigridSettings s = mg_settings();
-        s.tol_drop = 1e-10;
-        s.max_iter = 600;
-        s.levels = c.levels;
-        s.gamma = c.gamma;
-        s.n_pre = c.n_pre;
-        s.n_post = c.n_post;
-        s.n_coarse = c.n_coarse;
-        s.fine_order = c.fo == 1 ? euler::Order::First : euler::Order::Second;
-        s.coarse_order = c.co == 1 ? euler::Order::First : euler::Order::Second;
-        s.fine_rk = euler::rk_scheme(s.fine_order, c.fst);
-        s.coarse_rk = euler::rk_scheme(s.coarse_order, c.cst);
-        s.fine_rk.cfl *= c.fcfl;
-        s.coarse_rk.cfl *= c.ccfl;
-        euler::WALL_PRESSURE_EXTRAPOLATE = c.wext;
-        const Row r = run_mg(m, fs, s, c.name);
-        (void)r;
-        euler::WALL_PRESSURE_EXTRAPOLATE = true;
+        s.gamma = 1;
+        s.relax = 1.0;
+        const Mode v1 = power_iteration(m, ws, fs, s, nit);
+        print_mode("V 4 levels, relax 1 (old)", v1);
+        std::printf("  [INFO] M9 V-cycle RK relax 1: eigenvalue %+.3f (< -1: period-2 stall), %.0f %% of the mode "
+                    "in the 8 TE wall cells\n",
+                    v1.rayleigh, 100.0 * v1.te_share);
+        s.relax = 0.0; // automatic: 0.5 with RK
+        const Mode v2 = power_iteration(m, ws, fs, s, nit);
+        print_mode("V 4 levels, relax auto (0.5)", v2);
+        s.levels = 3;
+        const Mode v3 = power_iteration(m, ws, fs, s, nit);
+        print_mode("V 3 levels, relax auto (0.5)", v3);
+        s.levels = 0;
+        s.gamma = 2;
+        const Mode w4 = power_iteration(m, ws, fs, s, nit);
+        print_mode("W 4 levels, relax auto (0.5)", w4);
+        check(v2.lambda < 1.0 && v3.lambda < 1.0 && w4.lambda < 1.0 && euler::correction_relax(s, euler::Order::Second) == 0.5,
+              "M9 RK smoother, relax auto = %.2f: |lambda| V4 %.3f, V3 %.3f, W4 %.3f (all < 1)",
+              euler::correction_relax(s, euler::Order::Second), v2.lambda, v3.lambda, w4.lambda);
+    }
+    {
+        const euler::Freestream fs = euler::make_freestream(0.8, 1.25);
+        euler::Flow ws; // converged state
+        euler::allocate_flow(m, ws);
+        euler::init_freestream(ws, fs);
+        euler::ImplicitSettings is;
+        is.tol_drop = 1e-13;
+        is.print_every = 0;
+        euler::run_implicit(m, ws, fs, is);
+        std::printf("  M 0.8, SGS smoother, one smoothing step on one grid:\n");
+        euler::MultigridSettings s = mg_settings();
+        s.smoother = euler::MgSmoother::SGS;
+        s.levels = 1;
+        s.n_coarse = 1;
+        s.sgs_cfl = 20.0;
+        const Mode a = power_iteration(m, ws, fs, s, 3 * nit);
+        print_mode("SGS step, CFL 20 (old default)", a);
+        std::printf("  [INFO] M9 SGS step at CFL 20: eigenvalue %+.3f, mode at the leading edge (%d, %d)\n", a.rayleigh,
+                    a.imax, a.jmax);
+        s.sgs_cfl = euler::MultigridSettings{}.sgs_cfl;
+        const Mode b = power_iteration(m, ws, fs, s, 3 * nit);
+        print_mode("SGS step, default CFL", b);
+        s.levels = 0;
+        s.n_coarse = 2;
+        const Mode w = power_iteration(m, ws, fs, s, nit);
+        print_mode("W-cycle SGS, default CFL", w);
+        check(b.lambda < 1.0 && w.lambda < 1.0,
+              "M9 SGS smoother at the default CFL %.0f, M 0.8: |lambda| one step %.3f, W-cycle %.3f (< 1)", s.sgs_cfl,
+              b.lambda, w.lambda);
     }
 }
 
 int main(int argc, char** argv)
 {
-    if (argc >= 4 && std::string(argv[3]) == "vdebug") {
-        try {
-            debug_v(load_mesh(argv[1]));
-        }
-        catch (const std::exception& e) {
-            std::fprintf(stderr, "error: %s\n", e.what());
-            return 1;
-        }
-        return 0;
-    }
     if (argc < 3) {
         std::fprintf(stderr, "usage: %s <33x33.x> <65x65.x>\n", argv[0]);
         return 1;
@@ -816,6 +936,8 @@ int main(int argc, char** argv)
         test_convergence(m65, "65x65");
         std::printf("\n=== M8 transonic\n");
         test_transonic(m33);
+        std::printf("\n=== M9 linear stability of the cycle on 65x65\n");
+        test_stability(m65);
     }
     catch (const std::exception& e) {
         std::fprintf(stderr, "error: %s\n", e.what());

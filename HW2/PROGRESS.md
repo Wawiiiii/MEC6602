@@ -419,8 +419,22 @@ Fine grids: use gmres_restart 50, gmres_max_iter 150 (513) to 300 (2049). 2049x2
 ## 7. To resume with Claude
 
 Point Claude at this file and the memory notes, e.g.:
-"Read HW2/PROGRESS.md, HW2/DEVIATIONS.md and HW2/RESULTS.md. Steps 1-7 are done, multigrid (8) is
-written and partly working. Next: fix the multigrid stalls (RK smoother, transonic coarse grids),
-2049 result, Part 4 (M 0.5 / 0.8 / 1.5 analysis, shock quality), Part 5 fixed CL, chord question.
+"Read HW2/PROGRESS.md, HW2/DEVIATIONS.md and HW2/RESULTS.md (start with RESULTS.md section 0,
+'What to use in the report'). Steps 1-8 are done: implicit BDF1/BDF2/ROW + GMRES, FMG start,
+multigrid W/V with RK or SGS smoother, OpenMP. Main method for the report: BDF1 + GMRES with
+fmg_levels 4; farfield_vortex = on for the M 0.5 grid study. Next: run the 1025 / 2049 cases
+(RESULTS.md section 1 lists what finished), Part 4 plots (M 0.5 / 0.8 / 1.5 on 513), Part 5 fixed
+CL (M 0.8, CL 0.4), chord question (1 vs 1.00893), timings on an idle machine.
+Tests: python tests/run_all_tests.py <build dir with the test executables>.
 Keep the same rules: slides unless a documented reason, order 2 required, you code and test,
 comment style as described."
+
+Night of 2026-11-12/13 (Windows machine), done and documented:
+- Multigrid stalls B18 / B19: root causes found by power iteration (period-2 unstable modes);
+  RK smoother: correction relaxation 0.5 (`mg_relax`, 0 = auto); SGS smoother CFL 10.
+- `linear_solver = sgs` in the implicit solver: same instability, default cfl_max 10.
+- GMRES stagnation at high CFL on 513 (M 0.8 alpha 1.25, M 1.25): CFL backtracking (A24, `gmres_fail`).
+- FMG start on 9x9 crashed (cannot coarsen): skipped now.
+- Farfield vortex correction (post.pdf slide 22) as option `farfield_vortex` (A25): removes the
+  CD floor at M 0.5 alpha 1.25.
+- `tests/run_all_tests.py` runs every test program with its grid arguments.

@@ -54,6 +54,7 @@ namespace euler {
         int gmres_restart = 30;                 // GMRES restart length (slide 39: 20-50)
         int gmres_max_iter = 60;                // GMRES iterations per linear solve
         double gmres_rtol = 1e-3;               // GMRES relative tolerance (inexact Newton)
+        double gmres_fail = 0.5;                // linear solve failed if its relative residual is above this (CFL backtracking)
         int sgs_sweeps = 2;                     // SGS sweeps (preconditioner, or the solver itself)
         double sgs_omega = 1.0;                 // SGS relaxation factor
         double max_change = 0.5;                // update limiter: |d rho|/rho and |d p|/p at most this
@@ -73,6 +74,11 @@ namespace euler {
        first-order Jacobian + c Omega/dt on the diagonal; linear solve(s); update with the
        positivity limiter (the update is scaled down if it would change rho or p by more than
        max_change in some cell).
+       CFL backtracking (GMRES only, not in the slides, DEVIATIONS A24): if the linear solve fails
+       (relative residual > gmres_fail) the step is rejected and a CFL cap is set to 1/10 of the CFL
+       used; after every successful step the cap doubles (up to cfl_max). Without it, GMRES on
+       513x513 (M 0.8 and M 1.25) stagnates completely (relative residual 1.00) once the CFL reaches
+       ~1e4 - 1e7, the update is zero, the residual and so the CFL stay the same: a permanent stall.
     */
     RunResult run_implicit(const Mesh& m, Flow& f, const Freestream& fs, const ImplicitSettings& s);
 
