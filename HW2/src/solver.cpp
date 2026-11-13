@@ -46,6 +46,7 @@ namespace euler {
     void local_time_step(const Mesh& m, const Flow& f, double cfl, std::vector<double>& dt)
     {
         dt.resize(m.vol.size());
+#pragma omp parallel for schedule(static)
         for (int j = 0; j < m.njc; ++j) {
             for (int i = 0; i < m.nic; ++i) {
                 const int c = m.cell(i, j);
@@ -77,13 +78,24 @@ namespace euler {
 
     double density_residual_norm(const Mesh& m, const Flow& f)
     {
-        double sum = 0.0; // sum of (R_rho / Omega)^2
+        /*
+        Row sums in parallel, then the rows added in order: the same result whatever the number of
+        threads (an OpenMP reduction would add in a thread-dependent order).
+        */
+        std::vector<double> row(m.njc, 0.0); // sum of (R_rho / Omega)^2 over each j row
+#pragma omp parallel for schedule(static)
         for (int j = 0; j < m.njc; ++j) {
+            double s = 0.0;
             for (int i = 0; i < m.nic; ++i) {
                 const int c = m.cell(i, j);
                 const double r = f.R[0][c] / m.vol[c];
-                sum += r * r;
+                s += r * r;
             }
+            row[j] = s;
+        }
+        double sum = 0.0; // sum of (R_rho / Omega)^2
+        for (int j = 0; j < m.njc; ++j) {
+            sum += row[j];
         }
         return std::sqrt(sum / (static_cast<double>(m.nic) * m.njc));
     }
@@ -200,6 +212,7 @@ namespace euler {
                     compute_residual(m, f, s.order); // R(W(k-1))
                 }
                 const double a = s.rk.alpha[st]; // alpha_k
+#pragma omp parallel for schedule(static)
                 for (int j = 0; j < m.njc; ++j) {
                     for (int i = 0; i < m.nic; ++i) {
                         const int c = m.cell(i, j);

@@ -34,6 +34,7 @@
      sgs_sweeps, sgs_omega   SGS sweeps (preconditioner or solver) and relaxation             [2, 1.0]
      max_change     update limiter: largest relative change of rho and p per iteration      [0.5]
      limiter_k   limiter constant K, eps = (K h)^3 (muscl.h); very large = no limiting (study only) [5]
+     threads     OpenMP threads (0 = all logical cores; results do not depend on it)            [0]
      wall_pressure  wall ghost pressure: extrapolated (2 p0 - p1, 2nd order) or mirror (slide 14) [extrapolated]
      wall_extrap_switch  extrapolated only after the residual dropped by this (1 = from the start;
                     ~1e-3 for supersonic cold starts); mirror before                           [1]
@@ -178,6 +179,7 @@ int main(int argc, char** argv)
         is.sgs_omega = std::stod(take(kv, "sgs_omega", "1.0"));
         is.max_change = std::stod(take(kv, "max_change", "0.5"));
         euler::LIMITER_K = std::stod(take(kv, "limiter_k", "5"));            // limiter eps = (K h)^3, muscl.h
+        euler::set_threads(std::stoi(take(kv, "threads", "0")));           // OpenMP threads (0 = all)
         const std::string wallp = take(kv, "wall_pressure", "extrapolated"); // wall ghost pressure, bc.h
         if (wallp != "mirror" && wallp != "extrapolated") {
             throw std::runtime_error("wall_pressure must be mirror or extrapolated");
@@ -285,6 +287,8 @@ int main(int argc, char** argv)
         euler::allocate_flow(m, f);
         const euler::Freestream fs = euler::make_freestream(mach, alpha);
         euler::init_freestream(f, fs);
+
+        std::printf("OpenMP threads: %d\n", euler::get_threads());
 
         // One run of the chosen solver on a given mesh (used for the FMG coarse grids too).
         auto run_solver = [&](const euler::Mesh& mesh, euler::Flow& flow, double tol, const std::string& hist,

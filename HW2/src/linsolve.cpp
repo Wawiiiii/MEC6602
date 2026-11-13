@@ -84,6 +84,8 @@ namespace euler {
         y.resize(x.size());
         const int nic = M.nic; // cells in i
         const int njc = M.njc; // cells in j
+        // Each output row is independent: OpenMP parallel loop over the j rows.
+#pragma omp parallel for schedule(static)
         for (int j = 0; j < njc; ++j) {
             for (int i = 0; i < nic; ++i) {
                 const size_t p = static_cast<size_t>(M.index(i, j));        // this cell
@@ -178,9 +180,18 @@ namespace euler {
     {
         const int nc = M.ncell(); // number of cells
         Dinv.resize(static_cast<size_t>(nc) * NB);
+        /*
+        Blocks are independent: OpenMP parallel loop. An exception cannot leave an OpenMP region,
+        so each block records success and the first failure is reported after the loop.
+        */
+        std::vector<char> ok(static_cast<size_t>(nc), 1); // 1 = block inverted
+#pragma omp parallel for schedule(static)
         for (int p = 0; p < nc; ++p) {
             const size_t off = static_cast<size_t>(p) * NB; // start of block p
-            if (!invert4(&M.D[off], &Dinv[off])) {
+            ok[p] = invert4(&M.D[off], &Dinv[off]) ? 1 : 0;
+        }
+        for (int p = 0; p < nc; ++p) {
+            if (!ok[p]) {
                 throw std::runtime_error("linsolve: singular diagonal block at cell i = " +
                                          std::to_string(p % M.nic) + ", j = " + std::to_string(p / M.nic));
             }

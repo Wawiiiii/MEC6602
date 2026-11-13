@@ -29,8 +29,10 @@ namespace euler {
     /*
        Residual of every physical cell (Euler2D slide 9, basic_algo slide 6):
          R = sum over the 4 faces of (Fc dS), normal pointing out of the cell.
-       One flux per face: added to the left cell, subtracted from the right cell.
-       Updates f.Q from f.W first. Ghost slots of f.R get partial sums and must be ignored.
+       One flux per face (stored in f.Fi / f.Fj), then each cell sums its 4 faces: the flux is
+       added to the left cell and subtracted from the right cell. Updates f.Q from f.W first.
+       Ghost slots of f.R are 0 and must be ignored. Parallel with OpenMP (faces, then cells);
+       the result does not depend on the number of threads.
     */
     void compute_residual(const Mesh& m, Flow& f, Order order);
 

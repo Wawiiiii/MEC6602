@@ -251,19 +251,19 @@ namespace euler {
         }
         M.resize(m.nic, m.njc);
 
-        double qL[NEQ];   // left state at the face (cell value, first order)
-        double qR[NEQ];   // right state at the face
-        double dFdL[NB];  // dF/dW_L per unit length
-        double dFdR[NB];  // dF/dW_R per unit length
-        double J[NB];     // boundary flux Jacobian per unit length
-
         /*
         i-faces, i = 0..nic-1: face i has left cell west(i) and right cell i. Face 0 is the
         TE cut, it couples cell nic-1 (across the cut) with cell 0; the face i = ni-1 of the
         residual is the same physical face, so it is not visited again (each face once).
         Residual signs: R_left += F dS, R_right -= F dS (slide 26).
         */
+        // OpenMP: one j row per thread iteration; a row's i-faces only touch blocks of that row.
+#pragma omp parallel for schedule(static)
         for (int j = 0; j < m.njc; ++j) {
+            double qL[NEQ];  // left state at the face (cell value, first order)
+            double qR[NEQ];  // right state at the face
+            double dFdL[NB]; // dF/dW_L per unit length
+            double dFdR[NB]; // dF/dW_R per unit length
             for (int i = 0; i < m.nic; ++i) {
                 const int iw = M.west(i);         // i of the left cell (periodic)
                 const int cl = m.cell(iw, j);     // left cell storage index
@@ -284,9 +284,17 @@ namespace euler {
             }
         }
 
-        // Interior j-faces, j = 1..njc-1: left cell (i, j-1) = south, right cell (i, j) = north.
-        for (int j = 1; j < m.njc; ++j) {
-            for (int i = 0; i < m.nic; ++i) {
+        /*
+        Interior j-faces, j = 1..njc-1: left cell (i, j-1) = south, right cell (i, j) = north.
+        OpenMP: one i column per thread iteration (a j-face touches two rows but one column).
+        */
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < m.nic; ++i) {
+            double qL[NEQ];  // left state at the face
+            double qR[NEQ];  // right state at the face
+            double dFdL[NB]; // dF/dW_L per unit length
+            double dFdR[NB]; // dF/dW_R per unit length
+            for (int j = 1; j < m.njc; ++j) {
                 const int cl = m.cell(i, j - 1);   // left cell storage index
                 const int cr = m.cell(i, j);       // right cell storage index
                 const int fc = m.node(i, j);       // face storage index
@@ -312,8 +320,11 @@ namespace euler {
                       Wall: wall_ghost with the face normal; Farfield: outward normal -(njx, njy).
           j = nj-1  : farfield, interior cell on the LEFT -> R_d += F dS, outward normal +(njx, njy).
         */
+        // OpenMP: one i column per thread iteration (each column has its own boundary cells).
+#pragma omp parallel for schedule(static)
         for (int i = 0; i < m.nic; ++i) {
             double wd[NEQ]; // interior cell, conservative
+            double J[NB];   // boundary flux Jacobian per unit length
 
             // jmin
             {
@@ -360,6 +371,7 @@ namespace euler {
 
         // Time term (slide 28): diag_add[p] (e.g. Omega_p / dt_p) on the diagonal of D_p.
         if (!diag_add.empty()) {
+#pragma omp parallel for schedule(static)
             for (int p = 0; p < ncell; ++p) {
                 for (int k = 0; k < NEQ; ++k) {
                     M.D[p * NB + k * NEQ + k] += diag_add[p];

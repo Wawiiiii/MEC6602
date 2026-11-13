@@ -354,6 +354,20 @@ For comparison with the slide-14 mirror wall (same grids 128-256-512): CL p = 1.
   with RK, fewer levels for transonic, lower fine CFL in the cycle.
 - All results: `RESULTS.md`.
 
+### OpenMP (slides 57-70), 2026-11-13
+- Library linked with OpenMP (MSVC OpenMP 2.0, `find_package(OpenMP)`); case key `threads` (0 = all).
+- Residual restructured: all face fluxes first (stored in f.Fi / f.Fj, parallel over rows), then each
+  cell = sum of its 4 faces (parallel). No races, and the result is bit-identical for any number of
+  threads (checked: 1 vs 8 threads give the same residual history and forces to the last digit).
+- Also parallel: primitives, time step, RK updates, apply_bc columns, Jacobian assembly (i-faces by
+  rows, j-faces by columns, boundaries by columns), block mat-vec, diagonal inversion, implicit copies.
+  Residual norm: row sums in parallel, rows added in order (deterministic). Serial: block SGS sweeps
+  (Gauss-Seidel is sequential), GMRES dot products (kept deterministic).
+- Speed-up (machine busy with other runs, 8 threads): one 2nd-order residual on 257x257 5.2 -> 1.2 ms;
+  explicit RK 129x129 3000 it 21.3 -> 4.9 s (4.3x); implicit BDF1 + GMRES 257x257 20.3 -> 14.6 s (1.4x,
+  the serial SGS preconditioner now dominates). All test suites pass with OpenMP.
+- Possible next step: multicolour (red-black / diagonal) ordering to parallelise the SGS sweeps.
+
 ### Build and run (Windows, from `HW2/`)
 ```bash
 cmake -S . -B build && cmake --build build --config Release

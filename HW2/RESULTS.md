@@ -96,6 +96,12 @@ stalls (drop 4e-2 and 5e-3 after 500 cycles). CL still changes with the grid (0.
 test_roe 47/47, test_bc 29/29, test_explicit 12/12, test_output 30/30, test_jacobian 19/19,
 test_linsolve 38/38, test_implicit 7/7, test_multigrid 37/37 (agent build).
 
+## 5b. OpenMP
+
+All timings above are serial (1 core). With OpenMP (case key `threads`, default all cores) the
+results are bit-identical; speed-ups measured on a busy machine with 8 threads: residual 4.3x,
+explicit RK 4.3x, implicit BDF1 + GMRES 1.4x (serial SGS preconditioner). See PROGRESS.md.
+
 ## 6. Pending (were running when this file was written)
 
 - 2049x2049 M 0.5 alpha 1.25, BDF1 + GMRES (h2049 / s2049 in runs_tmp when finished).

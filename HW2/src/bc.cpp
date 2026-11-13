@@ -97,6 +97,8 @@ namespace euler {
             }
         };
 
+        // Every i column is independent (its own wall and farfield ghosts): parallel loop.
+#pragma omp parallel for schedule(static)
         for (int i = 0; i < m.nic; ++i) {
             // jmax, farfield: the j-face normal at j = nj-1 points to +j, i.e. out of the domain.
             {

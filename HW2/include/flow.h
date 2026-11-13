@@ -20,10 +20,18 @@ namespace euler {
         std::array<std::vector<double>, NEQ> W; // conservative variables: rho, rho*u, rho*v, rho*E
         std::array<std::vector<double>, NEQ> Q; // primitive variables: rho, u, v, p (computed from W)
         std::array<std::vector<double>, NEQ> R; // residual: sum over the cell faces of Fc*dS, normal pointing out
+        std::array<std::vector<double>, NEQ> Fi; // (Fc dS) of every i-face, stored at node(i, j) (work array)
+        std::array<std::vector<double>, NEQ> Fj; // (Fc dS) of every j-face, stored at node(i, j) (work array)
     };
 
-    // Allocate W, Q and R for every stored cell of the mesh (ghosts included), all NaN.
+    // Allocate W, Q and R for every stored cell of the mesh (ghosts included), all NaN; Fi, Fj per node.
     void allocate_flow(const Mesh& m, Flow& f);
+
+    // Number of OpenMP threads (0 = OpenMP default = all logical cores); no effect without OpenMP.
+    void set_threads(int n);
+
+    // Number of threads OpenMP will use (1 without OpenMP).
+    int get_threads();
 
     // Fill Q from W in every stored cell (ghosts included; a NaN cell simply gives NaN).
     void compute_primitives(Flow& f);

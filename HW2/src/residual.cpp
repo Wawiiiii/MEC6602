@@ -92,34 +92,62 @@ namespace euler {
     void compute_residual(const Mesh& m, Flow& f, Order order)
     {
         compute_primitives(f);
-        for (int k = 0; k < NEQ; ++k) {
-            std::fill(f.R[k].begin(), f.R[k].end(), 0.0);
+
+        // Face flux work arrays (allocate_flow sizes them; done here too for a Flow built by hand).
+        const size_t nnode = static_cast<size_t>(m.ni_tot) * m.nj_tot; // stored nodes = face slots
+        if (f.Fi[0].size() != nnode) {
+            for (int k = 0; k < NEQ; ++k) {
+                f.Fi[k].assign(nnode, 0.0);
+                f.Fj[k].assign(nnode, 0.0);
+            }
         }
 
-        double F[NEQ]; // (Fc dS) of the current face
-
-        // i-faces: what leaves the left cell (i-1, j) enters the right cell (i, j).
+        /*
+        Step 1: one flux per face (basic_algo slide 6), stored at the face. Faces are independent,
+        so the loops run in parallel (OpenMP, slides 68-70), one j row per iteration.
+        */
+#pragma omp parallel for schedule(static)
         for (int j = 0; j < m.njc; ++j) {
+            double F[NEQ]; // (Fc dS) of the current face
             for (int i = 0; i < m.ni; ++i) {
                 i_face_flux(m, f, order, i, j, F);
-                const int cl = m.cell(i - 1, j); // left cell
-                const int cr = m.cell(i, j);     // right cell
+                const int fc = m.node(i, j);
                 for (int k = 0; k < NEQ; ++k) {
-                    f.R[k][cl] += F[k];
-                    f.R[k][cr] -= F[k];
+                    f.Fi[k][fc] = F[k];
+                }
+            }
+        }
+#pragma omp parallel for schedule(static)
+        for (int j = 0; j < m.nj; ++j) {
+            double F[NEQ]; // (Fc dS) of the current face
+            for (int i = 0; i < m.nic; ++i) {
+                j_face_flux(m, f, order, i, j, F);
+                const int fc = m.node(i, j);
+                for (int k = 0; k < NEQ; ++k) {
+                    f.Fj[k][fc] = F[k];
                 }
             }
         }
 
-        // j-faces: left cell (i, j-1), right cell (i, j).
-        for (int j = 0; j < m.nj; ++j) {
+        /*
+        Step 2: residual of every physical cell from its 4 faces, normals pointing out of the cell:
+          R(i, j) = F_i(i+1, j) - F_i(i, j) + F_j(i, j+1) - F_j(i, j)
+        (what leaves the left cell of a face enters its right cell). Each cell only reads, so this
+        is parallel too, and the result does not depend on the number of threads (each cell always
+        sums the same 4 numbers in the same order). Ghost slots of R are set to 0 (not used).
+        */
+        for (int k = 0; k < NEQ; ++k) {
+            std::fill(f.R[k].begin(), f.R[k].end(), 0.0);
+        }
+#pragma omp parallel for schedule(static)
+        for (int j = 0; j < m.njc; ++j) {
             for (int i = 0; i < m.nic; ++i) {
-                j_face_flux(m, f, order, i, j, F);
-                const int cl = m.cell(i, j - 1); // left cell
-                const int cr = m.cell(i, j);     // right cell
+                const int c = m.cell(i, j);      // cell
+                const int w = m.node(i, j);      // west i-face / south j-face
+                const int e = m.node(i + 1, j);  // east i-face
+                const int n = m.node(i, j + 1);  // north j-face
                 for (int k = 0; k < NEQ; ++k) {
-                    f.R[k][cl] += F[k];
-                    f.R[k][cr] -= F[k];
+                    f.R[k][c] = f.Fi[k][e] - f.Fi[k][w] + f.Fj[k][n] - f.Fj[k][w];
                 }
             }
         }

@@ -15,6 +15,7 @@ namespace euler {
     static void gather(const Mesh& m, const std::array<std::vector<double>, NEQ>& a, std::vector<double>& x)
     {
         x.resize(static_cast<size_t>(NEQ) * m.nic * m.njc);
+#pragma omp parallel for schedule(static)
         for (int j = 0; j < m.njc; ++j) {
             for (int i = 0; i < m.nic; ++i) {
                 const int c = m.cell(i, j);    // cell array index
@@ -30,6 +31,7 @@ namespace euler {
     static void set_plus(const Mesh& m, const std::array<std::vector<double>, NEQ>& base, double s,
                          const std::vector<double>& x, std::array<std::vector<double>, NEQ>& a)
     {
+#pragma omp parallel for schedule(static)
         for (int j = 0; j < m.njc; ++j) {
             for (int i = 0; i < m.nic; ++i) {
                 const int c = m.cell(i, j);
@@ -162,6 +164,7 @@ namespace euler {
                 apply_bc(m, fp, fs, s.jmin);
                 compute_residual(m, fp, s.order);
                 gather(m, fp.R, Rp);
+#pragma omp parallel for schedule(static)
                 for (int p = 0; p < nc; ++p) {
                     for (int k = 0; k < NEQ; ++k) {
                         const size_t a = static_cast<size_t>(p) * NEQ + k;

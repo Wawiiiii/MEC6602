@@ -34,6 +34,17 @@ add_library(euler2d
     src/multigrid.cpp
 )
 target_include_directories(euler2d PUBLIC include)
+if(MSVC)
+    # fopen is standard C++; silence MSVC's "use fopen_s" deprecation warning.
+    target_compile_definitions(euler2d PUBLIC _CRT_SECURE_NO_WARNINGS)
+endif()
+
+# OpenMP (Roe_scheme_accel slides 68-70): parallel loops over faces / cells. MSVC supports OpenMP 2.0.
+# Number of threads: case-file key "threads" (0 = all logical cores) or the OMP_NUM_THREADS variable.
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(euler2d PUBLIC OpenMP::OpenMP_CXX)
+endif()
 
 # Step 1 check: read a plot3D mesh and print it.
 add_executable(test_mesh tests/test_mesh.cpp)
