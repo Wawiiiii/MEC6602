@@ -28,8 +28,8 @@ namespace euler {
          3. gamma cycles on level l+1 (gamma = 1: V-cycle, gamma = 2: W-cycle, slides 52-53);
             on the coarsest level: n_coarse iterations instead
          4. prolongation of the correction (slides 48, 50):
-              W_l += I (W_{l+1} - W_{l+1}^(0)),  bilinear weights 9/16, 3/16, 3/16, 1/16 of the
-              nearest coarse cells (slide 50)
+              W_l += relax I (W_{l+1} - W_{l+1}^(0)),  bilinear weights 9/16, 3/16, 3/16, 1/16 of the
+              nearest coarse cells (slide 50); relax < 1 only into a 2nd-order level (see below)
          5. post-smoothing: n_post iterations
        Smoother on every level ("any temporal scheme can be used", slide 47):
          RK  : the multistage scheme of slide 18 with local time steps,
@@ -43,6 +43,25 @@ namespace euler {
        forcing cancels and there is no correction).
        Full multigrid start (slide 42): optionally converge on the coarse grids first and inject
        the solution into the next finer grid (fine cells = their coarse cell) as initial condition.
+
+       Two stability settings (DEVIATIONS.md B18, B19, measured by power iteration on the cycle
+       linearised about the converged solution, NACA0012 65x65):
+         relax   : the correction prolonged into a SECOND-order level is multiplied by relax
+                   (W_l += relax I (W_{l+1} - W_{l+1}^(0))). Automatic value (relax <= 0): 0.5 with
+                   the RK smoother, 1 with SGS; corrections into first-order levels are never relaxed.
+                   Why: at the trailing edge the 2nd-order fine operator is twice as stiff as the
+                   1st-order coarse one for the mode "pressure jump across the TE" (measured
+                   <I A_h e, A_H I e> / |A_H I e|^2 = 1.98 there), so the coarse grid corrects that
+                   mode about twice too much; the RK smoother does not damp it (one RK5 step even
+                   amplifies it transiently, x1.29, x1.41 after two), so the cycle had an eigenvalue
+                   of -1.7 (V, 3 levels) to -1.95 (V, 4 levels): period-2 limit cycle = the stall.
+                   relax = 0.5 = 1 / 1.98 removes the overshoot (eigenvalues 0.90-0.92).
+                   The implicit SGS smoother damps that mode itself and needs no relaxation.
+         sgs_cfl : 10 (was 20). The SGS step on the 2nd-order residual with the 1st-order Jacobian
+                   is a defect correction; at M 0.8 the limiter makes an odd-even mode along the
+                   wall at the leading edge about 2x stiffer in R than in J1, and the step overshoots
+                   it for CFL > ~15 (eigenvalue of one step -1.05 at CFL 20, -1.44 at CFL 40,
+                   +0.96 at 15 and 10): period-2 orbit of the smoother itself, even on one grid.
     */
     // Smoother of the multigrid cycle.
     enum class MgSmoother {
@@ -52,7 +71,7 @@ namespace euler {
 
     struct MultigridSettings {
         MgSmoother smoother = MgSmoother::RK; // smoother on every level
-        double sgs_cfl = 20.0;               // CFL of the SGS smoother (implicit Euler step)
+        double sgs_cfl = 10.0;               // CFL of the SGS smoother (implicit Euler step), see below
         int sgs_sweeps = 2;                  // SGS sweeps per smoothing step
         int levels = 0;                      // number of grid levels (0 = as many as possible)
         int gamma = 2;                       // 1 = V-cycle, 2 = W-cycle
@@ -65,6 +84,7 @@ namespace euler {
         RkScheme fine_rk;                    // multistage scheme on the finest level
         RkScheme coarse_rk;                  // multistage scheme on the coarse levels
         double max_change = 0.5;             // limiter of the prolonged correction (rho, p)
+        double relax = 0.0;                  // relaxation of the correction into a 2nd-order level (<= 0: auto)
         JminBc jmin = JminBc::Wall;          // jmin boundary
         int max_iter = 2000;                 // number of cycles
         double tol_drop = 1e-12;             // stop when the fine ||R_rho|| has dropped by this
@@ -100,6 +120,9 @@ namespace euler {
        finest level, one entry per cycle (RunResult.iterations = number of cycles).
     */
     RunResult run_multigrid(const Mesh& m, Flow& f, const Freestream& fs, const MultigridSettings& s);
+
+    // Relaxation factor of the correction prolonged into a level of the given order (see relax above).
+    double correction_relax(const MultigridSettings& s, Order level_order);
 
     // Number of levels run_multigrid would use for this mesh and settings.
     int multigrid_levels(const Mesh& m, const MultigridSettings& s);

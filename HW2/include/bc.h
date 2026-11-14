@@ -69,6 +69,28 @@ namespace euler {
     inline double WALL_EXTRAP_SWITCH = 1.0;
     inline bool WALL_EXTRAP_ACTIVE = true;
 
+    /*
+       Farfield vortex correction (post.pdf slide 22, Blazek; marked "not to be done in homework", so
+       OFF by default, case-file key farfield_vortex). The free stream seen by the farfield BC is
+       replaced by the free stream plus the compressible point vortex of the airfoil's circulation,
+       Gamma = 1/2 |V_inf| c CL (Kutta-Joukowski), centred at (VORTEX_XREF, VORTEX_YREF):
+         u = u_inf + Gamma beta sin(theta) / (2 pi d (1 - M^2 sin^2(theta - alpha)))
+         v = v_inf - Gamma beta cos(theta) / (2 pi d (1 - M^2 sin^2(theta - alpha))),  beta = sqrt(1 - M^2)
+         p^((g-1)/g) = p_inf^((g-1)/g) + (g-1)/g rho_inf / p_inf^(1/g) (|V_inf|^2 - |V|^2) / 2
+         rho = rho_inf (p / p_inf)^(1/g)                       (isentropic, constant total enthalpy)
+       CL is the current lift, recomputed from the wall pressure at every apply_bc (so the converged
+       state is consistent). Subsonic free stream only (M < 1). Purpose: the CD floor of ~2e-5 at
+       M 0.5, alpha 1.25 on the fine grids (DEVIATIONS B11) is the lift-induced error of a farfield at
+       ~150 chords without the correction; the Jacobian preconditioner keeps the plain free stream.
+    */
+    inline bool FARFIELD_VORTEX = false;
+    inline double VORTEX_CHORD = 1.0; // reference chord of CL in Gamma
+    inline double VORTEX_XREF = 0.25; // vortex position x
+    inline double VORTEX_YREF = 0.0;  // vortex position y
+
+    // Free stream plus the point vortex of lift coefficient cl, at (x, y) (see FARFIELD_VORTEX).
+    void vortex_freestream(const Freestream& fs, double cl, double x, double y, double qa[NEQ]);
+
     // What sits at jmin: the airfoil wall, or (slide 20 sanity check only) a farfield.
     enum class JminBc {
         Wall,

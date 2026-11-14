@@ -1,7 +1,10 @@
 #include "bc.h"
 
+#include "forces.h"
+
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace euler {
 
@@ -73,13 +76,35 @@ namespace euler {
         qb[3] = pb;
     }
 
+    void vortex_freestream(const Freestream& fs, double cl, double x, double y, double qa[NEQ])
+    {
+        const double M = fs.mach;                                  // free-stream Mach number (|V_inf|, c_inf = 1)
+        const double a = fs.alpha_deg * PI / 180.0;                // angle of attack
+        const double gam = 0.5 * M * VORTEX_CHORD * cl;            // circulation Gamma = 1/2 |V_inf| c CL
+        const double beta = std::sqrt(1.0 - M * M);                // Prandtl-Glauert factor
+        const double dx = x - VORTEX_XREF;
+        const double dy = y - VORTEX_YREF;
+        const double d = std::sqrt(dx * dx + dy * dy);             // distance to the vortex
+        const double th = std::atan2(dy, dx);                      // polar angle theta
+        const double s = std::sin(th - a);
+        const double fac = gam * beta / (2.0 * PI * d * (1.0 - M * M * s * s)); // vortex strength at (x, y)
+        const double u = fs.q[1] + fac * std::sin(th);
+        const double v = fs.q[2] - fac * std::cos(th);
+        const double e = (GAMMA - 1.0) / GAMMA;                    // (gamma - 1) / gamma
+        const double pe = std::pow(fs.q[3], e) + e * fs.q[0] / std::pow(fs.q[3], 1.0 / GAMMA) * 0.5 * (M * M - u * u - v * v);
+        qa[3] = std::pow(pe, 1.0 / e);                             // isentropic, same total enthalpy
+        qa[0] = fs.q[0] * std::pow(qa[3] / fs.q[3], 1.0 / GAMMA);
+        qa[1] = u;
+        qa[2] = v;
+    }
+
     void apply_bc(const Mesh& m, Flow& f, const Freestream& fs, JminBc jmin)
     {
         /*
         Farfield ghost from the boundary state: W_g = 2 Wb - Wd (conservative), both layers.
-        (nx, ny) must point out of the domain.
+        (nx, ny) must point out of the domain; qa = the outer state (free stream, or with the vortex).
         */
-        auto farfield_ghost = [&](int ci, int cg1, int cg2, double nx, double ny) {
+        auto farfield_ghost = [&](int ci, int cg1, int cg2, double nx, double ny, const double qa[NEQ]) {
             double wd[NEQ]; // interior cell, conservative
             double qd[NEQ]; // interior cell, primitive
             double qb[NEQ]; // boundary state, primitive
@@ -88,7 +113,7 @@ namespace euler {
                 wd[k] = f.W[k][ci];
             }
             cons_to_prim(wd, qd);
-            farfield_state(qd, fs.q, nx, ny, qb);
+            farfield_state(qd, qa, nx, ny, qb);
             prim_to_cons(qb, wb);
             for (int k = 0; k < NEQ; ++k) {
                 const double wg = 2.0 * wb[k] - wd[k]; // linear extrapolation to the ghost centre
@@ -97,19 +122,36 @@ namespace euler {
             }
         };
 
-        // Every i column is independent (its own wall and farfield ghosts): parallel loop.
+        // jmax, farfield (after the wall, whose ghosts the vortex correction's CL needs).
+        auto farfield_jmax = [&](double cl, bool vortex) {
+#pragma omp parallel for schedule(static)
+            for (int i = 0; i < m.nic; ++i) {
+                const int fc = m.node(i, m.nj - 1); // farfield face storage index; its normal points out (+j)
+                double qa[NEQ];                     // outer state of this face
+                if (vortex) {
+                    const double xf = 0.5 * (m.x[m.node(i, m.nj - 1)] + m.x[m.node(i + 1, m.nj - 1)]); // face midpoint
+                    const double yf = 0.5 * (m.y[m.node(i, m.nj - 1)] + m.y[m.node(i + 1, m.nj - 1)]);
+                    vortex_freestream(fs, cl, xf, yf, qa);
+                } else {
+                    for (int k = 0; k < NEQ; ++k) {
+                        qa[k] = fs.q[k];
+                    }
+                }
+                farfield_ghost(m.cell(i, m.njc - 1), m.cell(i, m.njc), m.cell(i, m.njc + 1), m.njx[fc], m.njy[fc], qa);
+            }
+        };
+        const bool vortex = FARFIELD_VORTEX && fs.mach < 1.0 && jmin == JminBc::Wall; // vortex correction on
+        if (!vortex) {
+            farfield_jmax(0.0, false);
+        }
+
+        // jmin: every i column is independent (its own wall ghosts): parallel loop.
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < m.nic; ++i) {
-            // jmax, farfield: the j-face normal at j = nj-1 points to +j, i.e. out of the domain.
-            {
-                const int fc = m.node(i, m.nj - 1); // farfield face storage index
-                farfield_ghost(m.cell(i, m.njc - 1), m.cell(i, m.njc), m.cell(i, m.njc + 1), m.njx[fc], m.njy[fc]);
-            }
-
             // jmin: the j-face normal at j = 0 points into the fluid.
             const int fw = m.node(i, 0); // wall face storage index
             if (jmin == JminBc::Farfield) {
-                farfield_ghost(m.cell(i, 0), m.cell(i, -1), m.cell(i, -2), -m.njx[fw], -m.njy[fw]); // flip: out of the domain
+                farfield_ghost(m.cell(i, 0), m.cell(i, -1), m.cell(i, -2), -m.njx[fw], -m.njy[fw], fs.q); // flip: out of the domain
                 continue;
             }
 
@@ -144,6 +186,14 @@ namespace euler {
                 f.W[k][m.cell(i, -1)] = wg[k]; // ghost 1 (slide: cell 1)
                 f.W[k][m.cell(i, -2)] = wg[k]; // ghost 2 (slide: cell 0), same rho and p as cell 2
             }
+        }
+
+        // Vortex correction: current CL from the wall pressure (wall ghosts are now set), then the farfield.
+        if (vortex) {
+            std::vector<double> pw; // wall-face pressure
+            wall_pressure(m, f, pw);
+            const ForceRef ref{VORTEX_CHORD, VORTEX_XREF, VORTEX_YREF}; // reference of CL
+            farfield_jmax(integrate_forces(m, pw, fs, ref).cl, true);
         }
 
         /*

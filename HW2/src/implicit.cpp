@@ -101,6 +101,7 @@ namespace euler {
         Monitor mon(s.max_iter, s.tol_drop, s.cauchy_window, s.cauchy_tol, s.print_every, s.history_file);
         mon.set_extra_columns("  |       CFL  lin_its   lin_res  update"); // printed after the linear solve
         WALL_EXTRAP_ACTIVE = WALL_EXTRAP_SWITCH >= 1.0; // extrapolated wall ghost from the start or later (bc.h)
+        double cfl_cap = s.cfl_max; // CFL cap of the backtracking (lowered when GMRES fails)
 
         for (int it = 1; it <= s.max_iter; ++it) {
             // Residual, forces, convergence check of W^n.
@@ -121,8 +122,8 @@ namespace euler {
                 }
             }
 
-            // CFL ramp (slide 40) and local time step.
-            const double cfl = std::min(s.cfl_max, std::max(s.cfl0, s.cfl0 * res.res0 / norm));
+            // CFL ramp (slide 40), capped by the backtracking cap, and local time step.
+            const double cfl = std::min(cfl_cap, std::min(s.cfl_max, std::max(s.cfl0, s.cfl0 * res.res0 / norm)));
             local_time_step(m, f, cfl, dt);
 
             // Time-term coefficient c of c Omega / dt.
@@ -186,7 +187,7 @@ namespace euler {
                 if (s.linsolve == LinearSolver::GMRES) {
                     const GmresResult g = gmres(apply_A, apply_Minv, b, x, s.gmres_restart, s.gmres_max_iter, s.gmres_rtol);
                     lin_its += g.iterations;
-                    lin_res = g.rel_residual;
+                    lin_res = std::max(lin_res, g.rel_residual); // worst of the solves (ROW has two)
                 } else {
                     block_sgs(M, Dfact, b, x, s.sgs_sweeps, s.sgs_omega);
                     lin_its += s.sgs_sweeps;
@@ -229,6 +230,18 @@ namespace euler {
                 }
                 solve(rhs, dW);
             }
+
+            // CFL backtracking: a failed linear solve rejects the step and lowers the CFL cap.
+            if (s.linsolve == LinearSolver::GMRES && !(lin_res <= s.gmres_fail)) {
+                cfl_cap = std::max(0.1 * cfl, s.cfl0);
+                std::fill(dWold.begin(), dWold.end(), 0.0);
+                if (s.print_every > 0) {
+                    std::printf("           CFL %.3e  linear solve failed (rel. res %.2e): step rejected, CFL cap %.3e\n",
+                                cfl, lin_res, cfl_cap);
+                }
+                continue;
+            }
+            cfl_cap = std::min(s.cfl_max, 2.0 * cfl_cap);
 
             // Positivity / size limiter, then update W.
             const double omega = update_factor(m, f, dW, s.max_change);

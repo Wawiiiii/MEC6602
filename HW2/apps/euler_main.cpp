@@ -18,8 +18,10 @@
      mg_levels   number of grids (0 = as many as possible, down to 9x9)                          [0]
      mg_pre, mg_post, mg_coarse   smoothing iterations before / after / on the coarsest grid      [1, 1, 2]
      mg_smoother rk (multistage, slide 18) or sgs (implicit Euler + block SGS)                   [rk]
-     mg_sgs_cfl, mg_sgs_sweeps    CFL and sweeps of the SGS smoother                             [20, 2]
+     mg_sgs_cfl, mg_sgs_sweeps    CFL and sweeps of the SGS smoother                             [10, 2]
      mg_coarse_order   spatial order on the coarse grids                                         [1]
+     mg_relax    factor of the coarse-grid correction prolonged into a 2nd-order grid;
+                 0 = automatic: 0.5 with the rk smoother, 1 with sgs (DEVIATIONS.md B18)        [0]
      mg_fmg      full multigrid start inside the cycle: cycles on each coarse level (0 = off)     [0]
      --- full multigrid start for any scheme (slide 42) ---
      fmg_levels  total number of grids of the FMG start (1 = off): solve coarsest first, inject   [1]
@@ -29,8 +31,9 @@
      cfl         CFL number; 0 = the slide 18 value of the chosen scheme                         [0]
      --- implicit (scheme = bdf1 / bdf2 / row) ---
      linear_solver  gmres (Jacobian-free Newton-Krylov) or sgs (block SGS on the 1st-order Jacobian) [gmres]
-     cfl0, cfl_max  CFL ramp sigma = cfl0 ||R0||/||R||, clamped to [cfl0, cfl_max] (slide 40)  [1, 1e8]
+     cfl0, cfl_max  CFL ramp sigma = cfl0 ||R0||/||R||, clamped to [cfl0, cfl_max] (slide 40)  [1, 1e8; 10 with sgs]
      gmres_restart, gmres_max_iter, gmres_rtol   GMRES settings                              [30, 60, 1e-3]
+     gmres_fail  GMRES relative residual above which the step is rejected and the CFL cut by 10  [0.5]
      sgs_sweeps, sgs_omega   SGS sweeps (preconditioner or solver) and relaxation             [2, 1.0]
      max_change     update limiter: largest relative change of rho and p per iteration      [0.5]
      limiter_k   limiter constant K, eps = (K h)^3 (muscl.h); very large = no limiting (study only) [5]
@@ -38,6 +41,8 @@
      wall_pressure  wall ghost pressure: extrapolated (2 p0 - p1, 2nd order) or mirror (slide 14) [extrapolated]
      wall_extrap_switch  extrapolated only after the residual dropped by this (1 = from the start;
                     ~1e-3 for supersonic cold starts); mirror before                           [1]
+     farfield_vortex  on: free stream + point vortex of the current CL at the farfield (post.pdf
+                    slide 22, Blazek; slides: not required for the homework); M < 1 only         [off]
      max_iter    iteration limit                                                                 [100000]
      tol         stop when ||R_rho|| has dropped by this factor                                  [1e-12]
      cauchy_window  Cauchy criterion on CL, CD, CM: window in iterations (0 = off)               [0]
@@ -173,10 +178,15 @@ int main(int argc, char** argv)
         euler::ImplicitSettings is;                                         // implicit settings
         const std::string lin = take(kv, "linear_solver", "gmres");         // implicit linear solver
         is.cfl0 = std::stod(take(kv, "cfl0", "1"));
-        is.cfl_max = std::stod(take(kv, "cfl_max", "1e8"));
+        /*
+        With linear_solver = sgs the step solves with the 1st-order Jacobian (defect correction): above
+        CFL ~ 20 it is unstable on a limiter mode at M 0.8 (DEVIATIONS B19), so its default cap is 10.
+        */
+        is.cfl_max = std::stod(take(kv, "cfl_max", lin == "sgs" ? "10" : "1e8"));
         is.gmres_restart = std::stoi(take(kv, "gmres_restart", "30"));
         is.gmres_max_iter = std::stoi(take(kv, "gmres_max_iter", "60"));
         is.gmres_rtol = std::stod(take(kv, "gmres_rtol", "1e-3"));
+        is.gmres_fail = std::stod(take(kv, "gmres_fail", "0.5")); // linear solve failed above this: CFL backtracking
         is.sgs_sweeps = std::stoi(take(kv, "sgs_sweeps", "2"));
         is.sgs_omega = std::stod(take(kv, "sgs_omega", "1.0"));
         is.max_change = std::stod(take(kv, "max_change", "0.5"));
@@ -201,6 +211,14 @@ int main(int argc, char** argv)
         s.ref.chord = std::stod(take(kv, "chord", "1.0"));
         s.ref.xref = std::stod(take(kv, "xref", std::to_string(0.25 * s.ref.chord)));
         s.ref.yref = std::stod(take(kv, "yref", "0"));
+        const std::string vortex = take(kv, "farfield_vortex", "off"); // farfield vortex correction, bc.h
+        if (vortex != "on" && vortex != "off") {
+            throw std::runtime_error("farfield_vortex must be on or off");
+        }
+        euler::FARFIELD_VORTEX = vortex == "on";
+        euler::VORTEX_CHORD = s.ref.chord; // CL of the circulation uses the same reference as the output
+        euler::VORTEX_XREF = s.ref.xref;   // vortex at the moment reference point (quarter chord)
+        euler::VORTEX_YREF = s.ref.yref;
         const std::string field_file = take(kv, "field", "field.dat");         // Tecplot field output
         const std::string surface_file = take(kv, "surface", "surface_cp.dat"); // surface Cp output
         const std::string summary_file = take(kv, "summary", "summary.txt");    // one line per run, appended
@@ -214,8 +232,9 @@ int main(int argc, char** argv)
         ms.n_coarse = std::stoi(take(kv, "mg_coarse", "2"));
         ms.fmg_cycles = std::stoi(take(kv, "mg_fmg", "0"));
         const std::string mg_smoother = take(kv, "mg_smoother", "rk");       // rk or sgs
-        ms.sgs_cfl = std::stod(take(kv, "mg_sgs_cfl", "20"));
+        ms.sgs_cfl = std::stod(take(kv, "mg_sgs_cfl", "10"));   // 20 is unstable at M 0.8 (DEVIATIONS B19)
         ms.sgs_sweeps = std::stoi(take(kv, "mg_sgs_sweeps", "2"));
+        ms.relax = std::stod(take(kv, "mg_relax", "0")); // correction relaxation, 0 = auto (DEVIATIONS B18)
         const int mg_coarse_order = std::stoi(take(kv, "mg_coarse_order", "1")); // spatial order of coarse levels
         const int fmg_levels = std::stoi(take(kv, "fmg_levels", "1"));       // FMG start for rk / implicit (1 = off)
         const double fmg_tol = std::stod(take(kv, "fmg_tol", "1e-6"));       // residual drop on each FMG coarse grid
@@ -346,9 +365,12 @@ int main(int argc, char** argv)
         first, residual drop fmg_tol), inject each solution into the next finer grid, and use the
         result as the initial condition of the fine run. fmg_levels = total number of grids (1 = off).
         */
-        if (fmg_levels > 1) {
-            const int nl = std::min(fmg_levels, euler::multigrid_levels(m, euler::MultigridSettings{}));
-            const std::vector<euler::Mesh> coarse = euler::coarse_hierarchy(m, nl);
+        const int fmg_nl = std::min(fmg_levels, euler::multigrid_levels(m, euler::MultigridSettings{})); // grids the mesh allows
+        if (fmg_levels > 1 && fmg_nl < 2) {
+            std::printf("  FMG start skipped: %d x %d cannot be coarsened\n", m.ni, m.nj);
+        }
+        if (fmg_nl > 1) {
+            const std::vector<euler::Mesh> coarse = euler::coarse_hierarchy(m, fmg_nl);
             euler::Flow prev; // solution on the previous (coarser) grid
             for (size_t l = 0; l < coarse.size(); ++l) {
                 euler::Flow cf; // flow on this coarse grid
