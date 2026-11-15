@@ -37,6 +37,8 @@
      sgs_sweeps, sgs_omega   SGS sweeps (preconditioner or solver) and relaxation             [2, 1.0]
      max_change     update limiter: largest relative change of rho and p per iteration      [0.5]
      limiter_k   limiter constant K, eps = (K h)^3 (muscl.h); very large = no limiting (study only) [5]
+     muscl_kappa  study only: off = Hemker-Koren limited slope; a number = UNLIMITED kappa scheme   [off]
+     limiter     slide 16 smooth limiter: hemker_koren (kappa^ 1/3) or van_albada (kappa^ 0) [hemker_koren]
      threads     OpenMP threads (0 = all logical cores; results do not depend on it)            [0]
      wall_pressure  wall ghost pressure: extrapolated (2 p0 - p1, 2nd order) or mirror (slide 14) [extrapolated]
      wall_extrap_switch  extrapolated only after the residual dropped by this (1 = from the start;
@@ -191,6 +193,14 @@ int main(int argc, char** argv)
         is.sgs_omega = std::stod(take(kv, "sgs_omega", "1.0"));
         is.max_change = std::stod(take(kv, "max_change", "0.5"));
         euler::LIMITER_K = std::stod(take(kv, "limiter_k", "5"));            // limiter eps = (K h)^3, muscl.h
+        const std::string kappa = take(kv, "muscl_kappa", "off");            // study only: unlimited kappa scheme, muscl.h
+        euler::MUSCL_KAPPA_ON = kappa != "off";
+        if (euler::MUSCL_KAPPA_ON) euler::MUSCL_KAPPA = std::stod(kappa);
+        const std::string limiter = take(kv, "limiter", "hemker_koren");    // slide 16: kappa^ 1/3 or 0, muscl.h
+        if (limiter != "hemker_koren" && limiter != "van_albada") {
+            throw std::runtime_error("limiter must be hemker_koren or van_albada");
+        }
+        euler::VAN_ALBADA = limiter == "van_albada";
         euler::set_threads(std::stoi(take(kv, "threads", "0")));           // OpenMP threads (0 = all)
         const std::string wallp = take(kv, "wall_pressure", "extrapolated"); // wall ghost pressure, bc.h
         if (wallp != "mirror" && wallp != "extrapolated") {

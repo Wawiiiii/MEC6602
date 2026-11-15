@@ -12,6 +12,30 @@ namespace euler {
     inline double LIMITER_K = 5.0;
 
     /*
+       Study only (case-file key muscl_kappa, 2026-11-14, DEVIATIONS A27): when set, the slope is the
+       UNLIMITED kappa scheme delta = 1/2 [(1 - kappa) b + (1 + kappa) a] (a across the face, b on the
+       far side; kappa = 1/3 gives (b + 2a)/3 = the hk_slope limit for eps -> infinity). Used to test
+       whether the third-order drag convergence of the unlimited kappa = 1/3 scheme comes from its
+       O(h^3) dissipation (kappa = 0 or -1 have an O(h^2) dissipative error). Smooth subsonic flow only.
+       Default: off (Hemker-Koren limited slope of slide 16, the homework scheme).
+    */
+    inline bool MUSCL_KAPPA_ON = false;
+    inline double MUSCL_KAPPA = 1.0 / 3.0;
+
+    /*
+       Limiter choice (case-file key limiter, 2026-11-14, DEVIATIONS A28). Slide 16 gives two smooth
+       limiters: kappa^ = 1/3 -> Hemker-Koren (hk_slope, default, the homework scheme), kappa^ = 0 ->
+       Van Albada (va_slope). Both use the same eps = (K h)^3 (A14); for eps -> infinity they give
+       the unlimited kappa = 1/3 slope (b + 2a)/3 and kappa = 0 slope (a + b)/2.
+    */
+    inline bool VAN_ALBADA = false;
+
+    inline double kappa_slope(double a, double b)
+    {
+        return 0.5 * ((1.0 - MUSCL_KAPPA) * b + (1.0 + MUSCL_KAPPA) * a);
+    }
+
+    /*
        Limiter eps of a cell of area Omega: eps = (K h)^3, h = sqrt(Omega) the cell size
        (Venkatakrishnan's scaling, J. Comput. Phys. 118, 1995).
        The slide 16 suggestion eps = Omega^2 = h^4 was implemented first: with it the 2nd-order
@@ -62,15 +86,25 @@ namespace euler {
         return ((2.0 * a * a + eps) * b + (b * b + 2.0 * eps) * a) / (2.0 * a * a + 2.0 * b * b - a * b + 3.0 * eps);
     }
 
+    // Van Albada smooth limited slope of slide 16 (kappa^ = 0); symmetric in a and b.
+    inline double va_slope(double a, double b, double eps)
+    {
+        return (a * (b * b + eps) + b * (a * a + eps)) / (a * a + b * b + 2.0 * eps);
+    }
+
     // Left state at face I+1/2 from cells I-1, I, I+1. eps = (area of cell I)^2.
     inline double muscl_left(double Um1, double U0, double Up1, double eps)
     {
+        if (MUSCL_KAPPA_ON) return U0 + 0.5 * kappa_slope(Up1 - U0, U0 - Um1); // study only
+        if (VAN_ALBADA) return U0 + 0.5 * va_slope(Up1 - U0, U0 - Um1, eps);   // kappa^ = 0 option
         return U0 + 0.5 * hk_slope(Up1 - U0, U0 - Um1, eps);
     }
 
     // Right state at face I+1/2 from cells I, I+1, I+2. eps = (area of cell I+1)^2.
     inline double muscl_right(double U0, double Up1, double Up2, double eps)
     {
+        if (MUSCL_KAPPA_ON) return Up1 - 0.5 * kappa_slope(Up1 - U0, Up2 - Up1); // study only
+        if (VAN_ALBADA) return Up1 - 0.5 * va_slope(Up1 - U0, Up2 - Up1, eps);   // kappa^ = 0 option
         return Up1 - 0.5 * hk_slope(Up1 - U0, Up2 - Up1, eps);
     }
 

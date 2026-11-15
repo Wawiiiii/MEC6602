@@ -1,8 +1,8 @@
 # HW2 – 2D Euler solver: progress notes
 
-Last updated: 2026-11-13 evening, steps 6 (outputs) and 7 (implicit BDF1/BDF2/ROW + GMRES) done,
-step 8 (FAS multigrid V/W, RK or SGS smoother, FMG) written and partly working; grid study on
-64..1024 shows order >= 2 for CL, CM (CD: see RESULTS.md); all numbers in RESULTS.md.
+Last updated: 2026-11-14. Grid-study matrix running (`run_queue.py`, with stall detection / retries; 7 cases incl. a kappa = 0 study, limiter off
+at M 0.5, on at M 0.8 / 1.25): live tables and orders in `results/MATRIX_REPORT.md`, notes in
+RESULTS.md §2b. Earlier: steps 6-8 done (outputs, implicit BDF1/BDF2/ROW + GMRES, FAS multigrid).
 
 This file sums up everything decided so far and where the code stands, so the work
 can be picked up again without the original conversation.

@@ -135,6 +135,101 @@ Comparison with the V&J 2010 continuum values (Table 10; C_ref = 1, X_ref = 0.25
   512x512, like our 64-128-256 triplet. Our CL, CM orders (2.3-2.6) match FLO82's (2.1); CFL3D and
   OVERFLOW are first order for CL and CM.
 
+### 2b. Limiter off on the subsonic cases, and the full matrix (started 2026-11-14)
+
+**Why the alpha = 0 CD order of 3.2 is not an order.** The ratio of successive CD changes
+(CD_coarse - CD_fine) keeps growing with the limiter on: 4.25, 6.21, 6.89, 9.19 (128 -> 2048). In
+the asymptotic range it would settle at a constant (4 for order 2), so no triplet is asymptotic: two
+behaviours are mixed, drag falling faster than order 2 on the medium grids (p 2.6-2.8) and a part
+that stops decreasing below ~1e-6 (with p 2.78 the 2049 CD would be 1.6e-6, it is 2.8e-6; p_bar
+1024 -> 2048 against 0 is 1.16). A small 2049 step makes the fit give a large p, so CD* ~ CD_2049.
+CD* is also very sensitive: +-5e-7 on CD_2049 gives p 3.0-3.4 and CD* 1.8e-6 - 3.0e-6. Report
+"CD stalls at O(1e-6)", not a three-digit CD*.
+
+**Decision (2026-11-14): limiter off (`limiter_k = 1e6`) on the smooth subsonic cases (M 0.5),
+limiter on (K = 5) on the transonic and supersonic cases (shocks).** See DEVIATIONS A26.
+
+Limiter off vs on, M 0.5 alpha 0, CD (exact 0):
+
+| grid | limiter on (K 5) | limiter off | p_bar off |
+|---|---|---|---|
+| 65x65 | 7.4979e-03 | 2.0062e-03 | 2.27 |
+| 129x129 | 1.6390e-03 | 3.2226e-04 | 2.64 |
+| 257x257 | 2.6045e-04 | 4.2852e-05 | 2.91 |
+| 513x513 | 3.8540e-05 | 4.8055e-06 | 3.16 |
+| 1025x1025 | 6.3291e-06 | (running) | |
+| 2049x2049 | 2.8253e-06 | (to run) | |
+
+Without the limiter the drag is 4-8x smaller on the same grid: most of the spurious entropy of the
+limited runs came from the limiter clipping at the leading-edge suction peak (where the entropy
+error peaks). 1025 and 2049 will say whether the ~1e-6 floor also goes away (limiter) or stays
+(grid / farfield / TE, B9, B11).
+
+**Fine grids, limiter off (2026-11-14 evening), M 0.5 alpha 0, CD:** 513: 4.8055e-06,
+1025: 5.6185e-07 (p_bar 3.10; triplet 256-512-1024 p 3.16, CD* 2.9e-8), **2049: 9.0807e-07 (higher
+than 1025; converged to 3.3e-13 in 14 iterations after FMG, so not an iterative error)**. So the
+limiter is not the whole story: without it CD drops at order ~3 down to 1025, then a non-vanishing
+part of ~1e-6 shows up on 2049 (with the limiter it was ~2.8e-6, the other solver below 2.7e-6).
+A rise from 1025 to 2049 means at least two error terms of opposite sign (e.g. a positive part that
+does not go to 0 plus a negative O(h^2) part), so no three-grid fit is valid on 512-1024-2048.
+Remaining candidates for the ~1e-6 part: finite farfield (~150 c; at alpha 0 the far field is the
+thickness doublet, an O(1e-6) drag error is plausible), trailing edge (B9). Next test: cut the
+1025 grid at a smaller outer radius and see whether CD changes like 1/R^2.
+
+**kappa study (DEVIATIONS A27), M 0.5 alpha 0, limiter off, unlimited kappa = 0:** CD 513:
+1.4525e-05, 1025: 2.9421e-06; p_bar 256->512 2.53, 512->1024 **2.30** (going down towards 2),
+vs 3.16 / 3.10 for kappa = 1/3, and 3-5x more drag. Supports the explanation: the drag (spurious
+entropy) follows the dissipative error, O(h^3) for kappa = 1/3, O(h^2) for kappa = 0.
+
+**M 0.5 alpha 1.25, limiter off:** CL 0.17935244 / 0.17937717 / 0.17938028, CD 2.6205e-05 /
+2.1401e-05 / 2.1694e-05, CM -2.2515423e-03 / -2.2552086e-03 / -2.2556132e-03 (513 / 1025 / 2049).
+Triplet 512-1024-2048: CL p 2.99, CL* 0.179381; CM p 3.18, CM* -0.0022557; CD flat at ~2.1e-5 =
+the lift-induced farfield floor without the vortex (B11, CL^2/(4 pi R) = 1.7e-5).
+
+Reference: another solver's multigrid results on the same case (values pasted 2026-11-14, source
+not recorded here), CD:
+
+| cells | 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048 |
+|---|---|---|---|---|---|---|---|---|---|
+| CD | 2.9240e-02 | 1.6886e-02 | 6.7307e-03 | 2.1339e-03 | 5.4662e-04 | 1.2945e-04 | 3.0458e-05 | 7.4713e-06 | 2.7136e-06 |
+| p_bar | | 0.79 | 1.33 | 1.66 | 1.96 | 2.08 | 2.09 | 2.03 | **1.46** |
+
+Its triplets: p 2.08 / 2.11 / 2.27 and CD* -3.4e-7 / 5.2e-7 / 1.47e-6 (128-256-512, 256-512-1024,
+512-1024-2048). Clean order 2 up to 1024, then the same flattening on 2048 as ours, at nearly the
+same 2049 value (2.71e-6 vs our 2.83e-6). Two different solvers stalling at ~2-3e-6 on 2049 points to
+the grids / farfield rather than to our code.
+
+**Queue from 2026-11-15 00:20 (user's order), limiter ON with both slide 16 limiters**
+(Hemker-Koren kappa^ 1/3 = default, folders `Mach_<M>_alpha_<a>`; Van Albada kappa^ 0, folders
+`..._vanalbada`, DEVIATIONS A28; user: Van Albada is the limiter to use): M 0.8 alpha 0 HK 2049
+(running), M 0.5 alpha 0 VA, M 0.5 alpha 1.25 HK, VA, M 0.8 alpha 0 VA, M 0.8 alpha 1.25 HK, VA,
+M 1.25 alpha 0 HK, VA, M 1.25 alpha 1.25 HK, VA. M 0.5 alpha 0 HK = `Mach_05_alpha_0` (done).
+
+**Matrix (running):** every grid 9 -> 2049, BDF1 + GMRES, `euler_inputs.txt` settings, FMG 4
+levels on 2049 only, farfield vortex off. Started with `run_matrix.sh` (M 0.5 alpha 0 limiter off,
+9 -> 1025), continued from 2026-11-14 ~15:30 by **`run_queue.py`** (skips grids already converged,
+detects stalls, retries), in this order:
+`Mach_05_alpha_0_nolimiter_kappa0` (kappa study, 9 -> 1025, DEVIATIONS A27), then 2049 of
+`Mach_05_alpha_0_nolimiter`, `Mach_05_alpha_125_nolimiter`, `Mach_08_alpha_0`, `Mach_08_alpha_125`,
+`Mach_125_alpha_0`, `Mach_125_alpha_125` (folders in `results/`; each grid keeps its `_input.txt`
+and `_terminal.txt`). The limiter-on M 0.5 alpha 1.25 runs done before the switch (9-257) are in
+`results/Mach_05_alpha_125_limiter/`.
+
+Stall handling (`run_queue.py`): a run is a stall if its best residual drop has not improved 10x
+in the last 50 iterations; stalled, max_iter or diverged runs are retried with attempt 2
+(same settings + FMG start from 257 up), attempt 3 (FMG + cfl_max 50, max_iter 1000, window 80),
+attempt 4 (FMG + cfl_max 10, max_iter 3000, window 300); every attempt keeps its
+`_input_aN.txt` / `_terminal_aN.txt`, and the events are listed in `results/ALERTS.txt`.
+First stall (2026-11-14 22:12): M 0.8 alpha 0 513, cold start: the CFL reached ~290 at it 36, the
+residual jumped 10x and oscillated at drop ~1e-2 (CL ~1e-4 at alpha 0, the shock moving) -> stall
+at it 93. A CFL cap of 50 with FMG was tried first and stuck at drop ~5e-4 (no Newton
+convergence at CFL 50; kept as `513x513_*_old_cfl50_killed.txt`), so the retry order was changed
+to FMG first: **FMG + normal ramp converged in 17 iterations (drop 9.5e-13), CD 8.3664502e-3 =
+the previous campaign's 0.00836645.** **Live tables and orders of every case:
+`results/MATRIX_REPORT.md`** (rewritten after every run and every 10 min; by hand:
+`python3 post/matrix_report.py`), with a "retry" column for runs that needed attempt 2 or 3.
+Copy the final numbers here when it is done.
+
 ## 3. Speed (Part 2) – one table is enough
 
 Total over the 8 flow cases, FMG start included (loaded machine, mixed thread counts: ratios to
