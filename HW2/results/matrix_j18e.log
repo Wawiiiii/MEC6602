@@ -1,0 +1,14 @@
+=== 2026-11-15 10:05:06  host j5015-18, queue j18e
+=== 2026-11-15 10:05:06  run_queue.py started (queue j18e)
+=== 2026-11-15 10:05:06  Mach_125_alpha_0  2049x2049  attempt 1  (M 1.25, alpha 0, limiter on, threads 26, fmg True, gmres_restart 200, gmres_max_iter 800, tol 1e-10, cfl0 10, gmres_fail 1e-2, cauchy_window 20, cauchy_tol 2e-7, max_iter 250)
+    Mach_125_alpha_0 2049 stopped by Claude 2026-11-15 12:31:42 in its FMG start (Cauchy 20/2e-7, max_iter 250 would not end in time); restarted with Cauchy 10/1e-6, max_iter 60; old files *_old_cauchy2e-7_stopped.txt
+=== 2026-11-15 12:31:42  host j5015-18, queue j18e
+=== 2026-11-15 12:31:42  run_queue.py started (queue j18e)
+=== 2026-11-15 12:31:42  Mach_125_alpha_0  2049x2049  attempt 1  (M 1.25, alpha 0, limiter on, threads 26, fmg True, gmres_restart 200, gmres_max_iter 800, tol 1e-10, cfl0 10, gmres_fail 1e-2, cauchy_window 10, cauchy_tol 1e-6, max_iter 60)
+=== 2026-11-15 12:32:57  host j5015-18, queue j18e
+    adopted running solver 307114: Mach_125_alpha_0 2049x2049 attempt 1
+    j18e queue restarted 2026-11-15 12:33:12 by Claude (its second case moved to queue j18f)
+    adopted run finished: Mach_125_alpha_0 2049x2049 cauchy
+=== 2026-11-16 08:23:20  run_queue.py started (queue j18e)
+    skip Mach_125_alpha_0 2049x2049 (already converged): 2049x2049    1.250   0.000 -5.8836175778e-08  9.6148938916e-02 -6.9623451000e-08     41  68597.89  cauchy      4.58e-02  bdf1-gmres      2  2026-11-16 08:23
+=== 2026-11-16 08:23:20  queue done

@@ -1,0 +1,1 @@
+2026-11-15 00:53:26  NOT CONVERGED Mach_08_alpha_125 513x513 attempt 1: stall at iteration 93 (best drop 2.06e-03, no 10x gain in 50 iterations)

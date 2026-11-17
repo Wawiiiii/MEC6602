@@ -1,0 +1,17 @@
+=== 2026-11-15 10:05:22  host j5015-17.meca.polymtl.ca, queue j17e
+=== 2026-11-15 10:05:22  run_queue.py started (queue j17e)
+=== 2026-11-15 10:05:22  Mach_125_alpha_125  2049x2049  attempt 1  (M 1.25, alpha 1.25, limiter on, threads 14, fmg True, gmres_restart 200, gmres_max_iter 800, tol 1e-10, cfl0 10, gmres_fail 1e-2, cauchy_window 20, cauchy_tol 2e-7, max_iter 250)
+    Mach_125_alpha_125 2049 stopped by Claude 2026-11-15 12:31:54 in its FMG start (Cauchy 20/2e-7, max_iter 250 would not end in time); restarted with Cauchy 10/1e-6, max_iter 60; old files *_old_cauchy2e-7_stopped.txt
+=== 2026-11-15 12:31:54  host j5015-17.meca.polymtl.ca, queue j17e
+=== 2026-11-15 12:31:54  run_queue.py started (queue j17e)
+=== 2026-11-15 12:31:54  Mach_125_alpha_125  2049x2049  attempt 1  (M 1.25, alpha 1.25, limiter on, threads 14, fmg True, gmres_restart 200, gmres_max_iter 800, tol 1e-10, cfl0 10, gmres_fail 1e-2, cauchy_window 10, cauchy_tol 1e-6, max_iter 60)
+=== 2026-11-15 12:33:14  host j5015-17.meca.polymtl.ca, queue j17e
+    adopted running solver 880899: Mach_125_alpha_125 2049x2049 attempt 1
+    j17e queue restarted 2026-11-15 12:33:29 by Claude (its second case moved to queue j17f)
+    j17e queue (re)started 2026-11-16 00:00:54 by Claude (Mon 00:05: queue processes on -17/-04 found dead (solvers alive), restarted; M 0.8 a0 VA 9-1025 moved j04d -> j01e)
+=== 2026-11-16 00:00:54  host j5015-17.meca.polymtl.ca, queue j17e
+    adopted running solver 880899: Mach_125_alpha_125 2049x2049 attempt 1
+    adopted run finished: Mach_125_alpha_125 2049x2049 cauchy
+=== 2026-11-16 04:39:20  run_queue.py started (queue j17e)
+    skip Mach_125_alpha_125 2049x2049 (already converged): 2049x2049    1.250   1.250  8.9355984527e-02  9.7931001796e-02 -1.8920155375e-02     44  49711.93  cauchy      2.48e-02  bdf1-gmres      2  2026-11-16 04:38
+=== 2026-11-16 04:39:20  queue done

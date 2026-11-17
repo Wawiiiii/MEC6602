@@ -1,0 +1,32 @@
+    j17h queue (re)started 2026-11-15 15:30:44 by Claude (15:35 split: waiting cases moved to new queues j18h j18i j17h j17i)
+=== 2026-11-15 15:30:44  host j5015-17.meca.polymtl.ca, queue j17h
+=== 2026-11-15 15:30:44  run_queue.py started (queue j17h)
+=== 2026-11-15 15:30:44  Mach_125_alpha_125_vanalbada  9x9  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 8)
+      9x9          1.250   1.250  8.3257522863e-02  1.3622332756e-01 -2.0417312471e-02     16      0.01  converged   3.86e-13  bdf1-gmres      2  2026-11-15 15:30
+=== 2026-11-15 15:31:15  Mach_125_alpha_125_vanalbada  17x17  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 8)
+      17x17        1.250   1.250  8.5636726610e-02  1.2407862292e-01 -1.9297192177e-02     19      0.01  converged   1.70e-13  bdf1-gmres      2  2026-11-15 15:31
+=== 2026-11-15 15:31:45  Mach_125_alpha_125_vanalbada  33x33  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 8)
+      33x33        1.250   1.250  8.8295655353e-02  1.0836841434e-01 -1.9414835270e-02     24      0.08  converged   8.21e-15  bdf1-gmres      2  2026-11-15 15:31
+=== 2026-11-15 15:32:15  Mach_125_alpha_125_vanalbada  65x65  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 8)
+      65x65        1.250   1.250  8.9162467092e-02  1.0064824870e-01 -1.9078211490e-02     33      0.42  converged   3.68e-14  bdf1-gmres      2  2026-11-15 15:32
+=== 2026-11-15 15:32:45  Mach_125_alpha_125_vanalbada  129x129  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 8)
+      129x129      1.250   1.250  8.9320008033e-02  9.8387377596e-02 -1.8972303891e-02     54      3.55  converged   4.45e-14  bdf1-gmres      2  2026-11-15 15:32
+=== 2026-11-15 15:33:15  Mach_125_alpha_125_vanalbada  257x257  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 8, fmg True)
+      257x257      1.250   1.250  8.9379561073e-02  9.7971563884e-02 -1.8948455355e-02     15     13.30  converged   2.14e-14  bdf1-gmres      2  2026-11-15 15:33
+=== 2026-11-15 15:33:45  Mach_125_alpha_125_vanalbada  513x513  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 8, fmg True)
+      513x513      1.250   1.250  8.9382303167e-02  9.7925671516e-02 -1.8934373960e-02     16    340.12  converged   2.97e-14  bdf1-gmres      2  2026-11-15 15:39
+=== 2026-11-15 15:39:47  Mach_125_alpha_125_vanalbada  1025x1025  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 8, fmg True, gmres_restart 200, gmres_max_iter 800, cfl0 10, gmres_fail 1e-2, cauchy_window 10, cauchy_tol 1e-6, max_iter 150)
+    j17h queue (re)started 2026-11-16 00:00:54 by Claude (Mon 00:05: queue processes on -17/-04 found dead (solvers alive), restarted; M 0.8 a0 VA 9-1025 moved j04d -> j01e)
+=== 2026-11-16 00:00:54  host j5015-17.meca.polymtl.ca, queue j17h
+    adopted running solver 941068: Mach_125_alpha_125_vanalbada 1025x1025 attempt 1
+    adopted run finished: Mach_125_alpha_125_vanalbada 1025x1025 max_iter
+=== 2026-11-16 08:41:32  run_queue.py started (queue j17h)
+    skip Mach_125_alpha_125_vanalbada 9x9 (already converged): 9x9          1.250   1.250  8.3257522863e-02  1.3622332756e-01 -2.0417312471e-02     16      0.01  converged   3.86e-13  bdf1-gmres      2  2026-11-15 15:30
+    skip Mach_125_alpha_125_vanalbada 17x17 (already converged): 17x17        1.250   1.250  8.5636726610e-02  1.2407862292e-01 -1.9297192177e-02     19      0.01  converged   1.70e-13  bdf1-gmres      2  2026-11-15 15:31
+    skip Mach_125_alpha_125_vanalbada 33x33 (already converged): 33x33        1.250   1.250  8.8295655353e-02  1.0836841434e-01 -1.9414835270e-02     24      0.08  converged   8.21e-15  bdf1-gmres      2  2026-11-15 15:31
+    skip Mach_125_alpha_125_vanalbada 65x65 (already converged): 65x65        1.250   1.250  8.9162467092e-02  1.0064824870e-01 -1.9078211490e-02     33      0.42  converged   3.68e-14  bdf1-gmres      2  2026-11-15 15:32
+    skip Mach_125_alpha_125_vanalbada 129x129 (already converged): 129x129      1.250   1.250  8.9320008033e-02  9.8387377596e-02 -1.8972303891e-02     54      3.55  converged   4.45e-14  bdf1-gmres      2  2026-11-15 15:32
+    skip Mach_125_alpha_125_vanalbada 257x257 (already converged): 257x257      1.250   1.250  8.9379561073e-02  9.7971563884e-02 -1.8948455355e-02     15     13.30  converged   2.14e-14  bdf1-gmres      2  2026-11-15 15:33
+    skip Mach_125_alpha_125_vanalbada 513x513 (already converged): 513x513      1.250   1.250  8.9382303167e-02  9.7925671516e-02 -1.8934373960e-02     16    340.12  converged   2.97e-14  bdf1-gmres      2  2026-11-15 15:39
+    skip Mach_125_alpha_125_vanalbada 1025x1025 (already converged): 1025x1025    1.250   1.250  8.9368853765e-02  9.7927380378e-02 -1.8922092175e-02    150  60496.04  max_iter    3.56e-03  bdf1-gmres      2  2026-11-16 08:41
+=== 2026-11-16 08:41:32  queue done

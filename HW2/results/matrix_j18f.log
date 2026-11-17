@@ -1,0 +1,5 @@
+=== 2026-11-15 12:33:02  host j5015-18, queue j18f
+=== 2026-11-15 12:33:02  run_queue.py started (queue j18f)
+=== 2026-11-15 12:33:02  Mach_125_alpha_125_vanalbada  2049x2049  attempt 1  (M 1.25, alpha 1.25, limiter on, limiter van_albada, threads 17, fmg True, gmres_restart 200, gmres_max_iter 800, tol 1e-10, cfl0 10, gmres_fail 1e-2, cauchy_window 10, cauchy_tol 1e-6, max_iter 60)
+    j18f: Mach_125_alpha_125_vanalbada 2049x2049 stopped 2026-11-16 00:17:43 by Claude (user: M 1.25 Van Albada 2049 runs not needed)
+=== 2026-11-16 00:17:43  queue done (stopped, case removed)

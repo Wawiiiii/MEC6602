@@ -1,0 +1,35 @@
+Case
+  mesh          grids/9x9.x  (9 x 9 nodes)
+  Mach          0.5000
+  alpha         1.2500 deg
+  order         2
+  solver        implicit bdf1 + gmres, CFL 1 -> 1e+08
+  threads       20
+
+   iter   ||R_rho||       drop             CL             CD             CM    time_s  |       CFL  lin_its   lin_res  update
+      1  1.0420e-01  1.000e+00  -3.027583e-04   4.619198e-03   1.229829e-03      0.00  |  1.00e+00        6  2.33e-04   1.000
+      2  7.4100e-02  7.111e-01   7.633532e-02   6.838773e-02  -2.071595e-02      0.00  |  1.41e+00        6  6.24e-04   1.000
+      3  3.6436e-02  3.497e-01   1.274877e-01   1.093203e-01  -3.365531e-02      0.00  |  2.86e+00        8  2.29e-04   1.000
+      4  9.6603e-03  9.271e-02   1.346104e-01   1.117418e-01  -2.940148e-02      0.00  |  1.08e+01       10  4.65e-04   1.000
+      5  4.9082e-03  4.710e-02   1.199581e-01   7.802739e-02  -1.442496e-02      0.00  |  2.12e+01       11  3.84e-04   1.000
+      6  6.8069e-04  6.533e-03   1.441937e-01   6.867415e-02  -1.309563e-02      0.01  |  1.53e+02       13  6.05e-04   1.000
+      7  5.2731e-05  5.061e-04   1.812256e-01   6.900988e-02  -1.421120e-02      0.01  |  1.98e+03       13  4.22e-04   1.000
+      8  6.4821e-07  6.221e-06   1.871481e-01   6.912774e-02  -1.431887e-02      0.01  |  1.61e+05       13  4.46e-04   1.000
+      9  3.4017e-10  3.265e-09   1.872191e-01   6.912875e-02  -1.432041e-02      0.01  |  1.00e+08       11  7.34e-04   1.000
+     10  8.0236e-14  7.700e-13   1.872191e-01   6.912875e-02  -1.432041e-02      0.01
+
+Result
+  status        converged (residual drop reached)
+  iterations    10
+  time          0.01 s
+  residual      1.042e-01 -> 8.024e-14   (drop 7.70e-13)
+  CL             1.8721911762e-01
+  CD             6.9128748559e-02
+  CM            -1.4320408707e-02
+  reference     chord 1.00000, moment about (0.2500, 0.0000)
+  diagnostic    CL 1.73313040e-01  CD 6.10163229e-02  CM -1.46203514e-02  (p extrapolated to the wall in post-processing)
+
+Output
+  surface       results/Mach_05_alpha_125_vanalbada/s9x9.dat
+  field         results/Mach_05_alpha_125_vanalbada/f9x9.dat
+  summary       results/Mach_05_alpha_125_vanalbada/9x9_summary.txt  (line appended)

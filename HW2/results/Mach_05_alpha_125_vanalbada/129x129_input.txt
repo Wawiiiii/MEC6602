@@ -1,0 +1,55 @@
+# Input file of the HW2 Euler solver. Run from the HW2 folder:
+#   ./build/linux/euler euler_inputs.txt        (Linux)
+#   ./build/Release/euler.exe euler_inputs.txt  (Windows)
+# One "key = value" per line, '#' starts a comment. Only mesh, mach and alpha are required;
+# any key left out takes its default. All keys are documented in cases/example.txt.
+# Output folders must exist (results/ is created once with: mkdir results).
+
+# --- Case ---
+mesh  = grids/129x129.x
+mach  = 0.5
+alpha = 1.25
+
+# --- Scheme ---
+order  = 2                 # spatial order: 1 or 2 (Roe + MUSCL / Hemker-Koren)
+scheme = bdf1              # rk (explicit RK), bdf1 (implicit Euler), bdf2, row, mg (multigrid)
+
+# explicit only (scheme = rk)
+stages = 5                 # 1 = explicit Euler, 3/4/5 = multistage RK (basic_algo slide 18)
+cfl    = 0                 # 0 = slide 18 value (1.15 for 5 stages at 2nd order)
+
+# implicit only (scheme = bdf1, bdf2, row)
+linear_solver  = gmres     # gmres (Jacobian-free Newton-Krylov) or sgs
+cfl0           = 1         # CFL ramp sigma = cfl0 ||R0||/||R|| ...
+cfl_max        = 1e8       # ... clamped to [cfl0, cfl_max]
+gmres_restart  = 150        # 50 on 513 and finer
+gmres_max_iter = 400        # 150 on 513, 300 on 2049
+gmres_rtol     = 1e-3      # GMRES relative tolerance
+sgs_sweeps     = 2         # SGS sweeps of the preconditioner
+max_change     = 0.5       # update limiter (start-up safeguard)
+
+# --- Convergence ---
+max_iter      = 200      # implicit: 20-100 needed; explicit RK: 1e4-1e5
+tol           = 1e-12      # stop when the density residual has dropped by this factor
+cauchy_window = 0          # Cauchy criterion on CL, CD, CM (0 = off)
+cauchy_tol    = 1e-6
+
+fmg_levels = 1
+fmg_tol    = 1e-6   # residual drop to reach on each coarse grid before moving to the next
+
+
+# --- Forces (V&J 2010: chord 1, moment about x = 0.25) ---
+chord = 1.0
+xref  = 0.25
+yref  = 0.0
+
+# --- Run ---
+threads     = 0            # OpenMP threads, 0 = all cores (results do not depend on it)
+print_every = 1            # one line every N iterations (~2000 for rk)
+
+# --- Output (Tecplot ASCII; "none" skips a file) ---
+history = none  # iteration, ||R_rho||, drop, CL, CD, CM, seconds
+surface = results/Mach_05_alpha_125_vanalbada/s129x129.dat
+field   = results/Mach_05_alpha_125_vanalbada/f129x129.dat
+summary = results/Mach_05_alpha_125_vanalbada/129x129_summary.txt
+limiter = van_albada   # case option (run_queue.py)
