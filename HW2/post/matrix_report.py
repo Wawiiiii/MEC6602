@@ -149,7 +149,10 @@ def main():
             "Driver: `run_matrix.sh`, log `results/matrix.log`. Last log line:\n",
             "    " + last + "\n"]
     body = [case_section(c) for c in cases]
-    open(OUT, "w").write("\n".join(head + [b for b in body if b]) + "\n")
+    # several machines write this report (shared disk): write a temporary file, then replace in one step
+    tmp = "%s.%s.tmp" % (OUT, os.getpid())
+    open(tmp, "w").write("\n".join(head + [b for b in body if b]) + "\n")
+    os.replace(tmp, OUT)
 
 
 if __name__ == "__main__":

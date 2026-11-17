@@ -205,6 +205,20 @@ the grids / farfield rather than to our code.
 (running), M 0.5 alpha 0 VA, M 0.5 alpha 1.25 HK, VA, M 0.8 alpha 0 VA, M 0.8 alpha 1.25 HK, VA,
 M 1.25 alpha 0 HK, VA, M 1.25 alpha 1.25 HK, VA. M 0.5 alpha 0 HK = `Mach_05_alpha_0` (done).
 
+**Lab machines (2026-11-15 00:46, user's permission for the night, one case per machine, nice 19;
+same shared disk, so every result lands in this `results/`; same binaries, so the numbers do not
+depend on the machine, only the times do):** j5015-18 (Xeon w7-2595X) = `Mach_08_alpha_125` (HK),
+j5015-17 (i7-14700K) = `Mach_08_alpha_125_vanalbada`, j5015-04 (i9-14900K, 31 GB free) =
+`Mach_125_alpha_0` (HK) 9 -> 1025 only. Everything else on j5015-01 (i9-10850K, queue j01): M 0.8
+alpha 0 HK 2049, M 0.5 alpha 0 VA, M 0.5 alpha 1.25 HK and VA, M 0.8 alpha 0 VA, M 1.25 alpha 0 VA,
+M 1.25 alpha 0 HK 2049. Logs: `results/matrix.log` (j01), `results/matrix_j18.log` etc.; alerts
+`results/ALERTS.txt`, `results/ALERTS_j18.txt` etc.
+
+**Settings from 2026-11-15 00:59 (user):** every run starts with FMG (4 levels) from 257 up and GMRES restart 200 / 800 iterations from 1025 up; retries = GMRES 200/800 on every grid, then + cfl_max 1e3 (the low CFL caps 50 / 10 are no longer used). Queues restarted with it; running solvers were taken over by the new queue processes.
+
+**Day split, 2026-11-15 10:05 (user: tol 1e-10 on 2049, all lab machines, add M 1.25 alpha 1.25, done by Mon 09:00):** queues j01d, j18d + j18e, j17d + j17e (two per machine: a 2049 run is mostly serial), j04d (grids up to 1025); contents in `run_queue.py` (QUEUES), schedule in `results/PROGRESS_NIGHT.md`. M 1.25 from 1025 up starts with cfl0 10, gmres_fail 1e-2 and the Cauchy stop (20 it, 2e-7).
+Later the same day (to keep Mon 09:00): M 1.25 on 1025 / 2049 changed to Cauchy 10 it / 1e-6 with max_iter 150 / 60 (12:30); the second case of each lab queue was moved to its own parallel queue (j18e/f/g, j17e/f at 12:35 and 14:20); at 15:30 the cases still waiting behind slow runs went to new queues j18h (M 0.5 a1.25 HK 2049), j18i (M 1.25 a1.25 HK 9-1025), j17h (M 1.25 a1.25 VA 9-1025), j17i (M 0.5 a1.25 HK 9-1025).
+
 **Matrix (running):** every grid 9 -> 2049, BDF1 + GMRES, `euler_inputs.txt` settings, FMG 4
 levels on 2049 only, farfield vortex off. Started with `run_matrix.sh` (M 0.5 alpha 0 limiter off,
 9 -> 1025), continued from 2026-11-14 ~15:30 by **`run_queue.py`** (skips grids already converged,

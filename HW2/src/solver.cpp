@@ -135,6 +135,7 @@ namespace euler {
     {
         if (row_open_) {
             std::printf("\n");
+            std::fflush(stdout); // the row reaches a redirected terminal file at once (stall watch, run_queue.py)
             row_open_ = false;
         }
     }
@@ -168,6 +169,7 @@ namespace euler {
                         r.seconds);
             if (extra_header_.empty()) {
                 std::printf("\n");
+                std::fflush(stdout); // see end_row()
             } else {
                 row_open_ = true; // the solver adds its columns, then calls end_row()
             }
