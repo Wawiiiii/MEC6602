@@ -12,19 +12,7 @@
 
 namespace euler {
 
-    /*
-       Implicit time schemes for the steady state (Roe_scheme_accel slides 25-40). With dt -> infinity
-       all of them become Newton's method on R(W) = 0 (slide 38). Pseudo-time, local time steps.
-         BDF1 : implicit Euler (slide 25):  (Omega/dt + J) dW = -R(W^n)
-         BDF2 : second-order backward difference (added at the user's request, not in the slides):
-                (3/2 Omega/dt + J) dW = -R(W^n) + Omega/(2 dt) dW^(n-1)     (first iteration = BDF1)
-         ROW  : Rosenbrock-Wanner ROS2, 2 stages, L-stable, gamma = 1 + 1/sqrt(2) (added at the
-                user's request, not in the slides), same matrix M = Omega/(gamma dt) + J for both:
-                M k1 = -R(W^n) / gamma
-                M k2 = -R(W^n + k1) / gamma - 2 Omega/(gamma dt) k1
-                W^(n+1) = W^n + 3/2 k1 + 1/2 k2
-       J = dR/dW of the full (second-order) residual.
-    */
+    // on va just prendre bdf1 - je voulais experimenter un peu :)
     enum class TimeScheme {
         BDF1,
         BDF2,
@@ -33,16 +21,16 @@ namespace euler {
 
     /*
        How each linear system is solved:
-         GMRES : Jacobian-free Newton-Krylov (slides 39-40): GMRES on the exact operator
+         GMRES : Jacobian-free Newton-Krylov: GMRES on the exact operator
                  c Omega/dt + J, J v ~ (R(W + eps v) - R(W)) / eps, right-preconditioned by
-                 block SGS sweeps on the first-order Roe Jacobian (slides 26-35).
-         SGS   : block SGS sweeps only, on the first-order operator (slide 33: approximate Jacobian,
-                 a few forward/backward sweeps, the update uses the 2nd-order residual on the right).
+                 block SGS sweeps on the first-order Roe Jacobian.
+         SGS   : block SGS sweeps only
     */
     enum class LinearSolver {
         GMRES,
         SGS
     };
+
 
     // Settings of one implicit run.
     struct ImplicitSettings {
@@ -51,8 +39,8 @@ namespace euler {
         LinearSolver linsolve = LinearSolver::GMRES; // linear solver
         JminBc jmin = JminBc::Wall;             // jmin boundary
         double cfl0 = 1.0;                      // starting CFL (10 fails on the supersonic 257x257 cold start)
-        double cfl_max = 1e8;                   // largest CFL (CFL ramp of slide 40)
-        int gmres_restart = 30;                 // GMRES restart length (slide 39: 20-50)
+        double cfl_max = 1e8;                   // largest CFL of the CFL ramp
+        int gmres_restart = 30;                 // GMRES restart length (typically 20-50)
         int gmres_max_iter = 60;                // GMRES iterations per linear solve
         double gmres_rtol = 1e-3;               // GMRES relative tolerance (inexact Newton)
         double gmres_fail = 0.5;                // linear solve failed if its relative residual is above this (CFL backtracking)
@@ -66,26 +54,9 @@ namespace euler {
         ForceRef ref;                           // force reference
         int print_every = 1;                    // print every N iterations
         std::string history_file;               // history file (empty = none)
-        FixedClSettings fixed_cl;               // fixed-CL mode, secant on alpha (post.pdf slide 9, fixedcl.h)
+        FixedClSettings fixed_cl;               // fixed-CL mode, secant on alpha (fixedcl.h)
     };
 
-    /*
-       Implicit iterations from the current f.W (cold start = free stream).
-       Each iteration: apply_bc, R(W^n), forces, convergence check; CFL ramp
-       sigma^n = sigma^0 ||R^0|| / ||R^n|| clamped to [cfl0, cfl_max] (slide 40); local dt;
-       first-order Jacobian + c Omega/dt on the diagonal; linear solve(s); update with the
-       positivity limiter (the update is scaled down if it would change rho or p by more than
-       max_change in some cell).
-       CFL backtracking (GMRES only, not in the slides, DEVIATIONS A24): if the linear solve fails
-       (relative residual > gmres_fail) the step is rejected and a CFL cap is set to 1/10 of the CFL
-       used; after every successful step the cap doubles (up to cfl_max). Without it, GMRES on
-       513x513 (M 0.8 and M 1.25) stagnates completely (relative residual 1.00) once the CFL reaches
-       ~1e4 - 1e7, the update is zero, the residual and so the CFL stay the same: a permanent stall.
-       Fixed-CL mode (s.fixed_cl.on, post.pdf slide 9): alpha is corrected by FixedClController during
-       the iterations; the free stream (farfield BC, force directions) is rebuilt at each change. The
-       run only counts as converged when the residual has dropped AND |CL - CL_t| <= cl_tol. The final
-       alpha is returned in RunResult::alpha_deg.
-    */
     RunResult run_implicit(const Mesh& m, Flow& f, const Freestream& fs, const ImplicitSettings& s);
 
 }

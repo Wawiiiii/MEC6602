@@ -8,6 +8,7 @@
 
 namespace euler {
 
+    // Cell arrays start as NaN, so a ghost cell left unfilled shows up in the residual.
     void allocate_flow(const Mesh& m, Flow& f)
     {
         const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -23,11 +24,12 @@ namespace euler {
         }
     }
 
+    // Q from W in every stored cell.
     void compute_primitives(Flow& f)
     {
         const int ncell = static_cast<int>(f.W[0].size()); // stored cells, ghosts included
 
-        // Every cell is independent: OpenMP parallel loop (slides 68-70).
+        // Every cell is independent: OpenMP loop.
 #pragma omp parallel for schedule(static)
         for (int c = 0; c < ncell; ++c) {
             const double w[NEQ] = {f.W[0][c], f.W[1][c], f.W[2][c], f.W[3][c]}; // conservative state of cell c

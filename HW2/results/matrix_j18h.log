@@ -1,6 +1,0 @@
-    j18h queue (re)started 2026-11-15 15:30:56 by Claude (15:35 split: waiting cases moved to new queues j18h j18i j17h j17i)
-=== 2026-11-15 15:30:56  host j5015-18, queue j18h
-=== 2026-11-15 15:30:56  run_queue.py started (queue j18h)
-=== 2026-11-15 15:30:56  Mach_05_alpha_125  2049x2049  attempt 1  (M 0.5, alpha 1.25, limiter on, threads 13, fmg True, gmres_restart 200, gmres_max_iter 800, tol 1e-10)
-      2049x2049    0.500   1.250  1.7935769804e-01  2.3688567012e-05 -2.2507154592e-03     16  37963.12  converged   6.79e-12  bdf1-gmres      2  2026-11-16 03:02
-=== 2026-11-16 03:02:21  queue done

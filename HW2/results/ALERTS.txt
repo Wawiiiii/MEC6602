@@ -1,5 +1,0 @@
-2026-11-14 22:12:57  NOT CONVERGED Mach_08_alpha_0 513x513 attempt 1: stall at iteration 93 (best drop 1.98e-03, no 10x gain in 50 iterations)
-2026-11-14 22:20:07  RECOVERED Mach_08_alpha_0 513x513 on attempt 2
-2026-11-14 22:37:08  NOT CONVERGED Mach_08_alpha_0 1025x1025 attempt 1: stall at iteration 106 (best drop 1.44e-03, no 10x gain in 50 iterations)
-2026-11-14 23:08:40  RECOVERED Mach_08_alpha_0 1025x1025 on attempt 2
-2026-11-15 21:57:57  === 2026-11-15 21:57:57  queue done

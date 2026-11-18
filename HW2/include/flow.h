@@ -8,39 +8,36 @@
 namespace euler {
 
     constexpr int NEQ = 4;        // number of equations in 2D: mass, x-momentum, y-momentum, energy
-    constexpr double GAMMA = 1.4; // ratio of specific heats (air)
+    constexpr double GAMMA = 1.4; 
 
     /*
-       Flow variables, one value per cell (cell-centred finite volume, Euler2D slides 8-9).
+       Flow variables, one value per cell (cell-centred finite volume)
        Stored like the mesh: one flat vector per variable, index Mesh::cell(i, j),
        ghost cells included. Everything starts as NaN, so a ghost cell that the
-       boundary conditions forgot to fill shows up as NaN in the residual.
+       boundary conditions forgot to fill shows up as NaN in the residual. -> Sanity check pcq bug au init - a revoir
     */
+
+    // je vais prendre des array de vecteurs ici ca va me faciliter l'ecriture. 
     struct Flow {
-        std::array<std::vector<double>, NEQ> W; // conservative variables: rho, rho*u, rho*v, rho*E
-        std::array<std::vector<double>, NEQ> Q; // primitive variables: rho, u, v, p (computed from W)
+        std::array<std::vector<double>, NEQ> W; // variables cons: rho, rho*u, rho*v, rho*E
+        std::array<std::vector<double>, NEQ> Q; // primitives : rho, u, v, p (computed from W)
         std::array<std::vector<double>, NEQ> R; // residual: sum over the cell faces of Fc*dS, normal pointing out
-        std::array<std::vector<double>, NEQ> Fi; // (Fc dS) of every i-face, stored at node(i, j) (work array)
-        std::array<std::vector<double>, NEQ> Fj; // (Fc dS) of every j-face, stored at node(i, j) (work array)
+        std::array<std::vector<double>, NEQ> Fi; // (Fc dS) of every i-face, stored at node(i, j)
+        std::array<std::vector<double>, NEQ> Fj; // (Fc dS) of every j-face, stored at node(i, j) 
     };
 
-    // Allocate W, Q and R for every stored cell of the mesh (ghosts included), all NaN; Fi, Fj per node.
+    // Allocate W, Q and R for every stored cell of the mesh 
     void allocate_flow(const Mesh& m, Flow& f);
 
-    // Number of OpenMP threads (0 = OpenMP default = all logical cores); no effect without OpenMP.
+    // pour multithread mais on est toujours single core dominated a cause de la GMRES je pense
     void set_threads(int n);
 
-    // Number of threads OpenMP will use (1 without OpenMP).
     int get_threads();
-
-    // Fill Q from W in every stored cell (ghosts included; a NaN cell simply gives NaN).
+    
     void compute_primitives(Flow& f);
 
-    /*
-       Primitive -> conservative (Euler2D slide 7):
-         q = (rho, u, v, p)  ->  w = (rho, rho u, rho v, rho E),
-         rho E = p / (gamma - 1) + rho (u^2 + v^2) / 2
-    */
+    // This ius the back and forthh btween primitive and conserved. 
+
     inline void prim_to_cons(const double q[NEQ], double w[NEQ])
     {
         w[0] = q[0];
@@ -49,7 +46,6 @@ namespace euler {
         w[3] = q[3] / (GAMMA - 1.0) + 0.5 * q[0] * (q[1] * q[1] + q[2] * q[2]);
     }
 
-    // Conservative -> primitive: p = (gamma - 1) (rho E - rho (u^2 + v^2) / 2).
     inline void cons_to_prim(const double w[NEQ], double q[NEQ])
     {
         const double rho = w[0];     // density

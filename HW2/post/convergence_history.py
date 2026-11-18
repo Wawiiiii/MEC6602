@@ -7,10 +7,10 @@ solver (fine grid only; the coarse levels of the full-multigrid start are not pr
 results/<folder>/<grid>_summary.txt. When a grid has several attempts (_terminal_a2.txt, ...) the
 attempt used is the one whose last row (iteration count and time) matches the summary.
 M 0.5 alpha 0 kept no terminal output (2026-11-13 runs) and has no figure (user 2026-11-18: the
-alpha 1.25 figure is enough); a partial rerun (129 to 513) is in results/Mach_05_alpha_0_history.
+alpha 1.25 figure is enough).
 
 Figures, report/figures/conv_<case>.png, 600 DPI, 3.4 x 2.6 in (as the Mach and Cp figures):
-  conv_M05_a125, conv_M08_a0, conv_M08_a125, conv_M125_a0, conv_M125_a125 (grids
+  conv_M05_a125, conv_M08_a125, conv_M125_a125 (grids
   129 to 2049), conv_M08_CL04 (fixed CL 0.4, grids 129 to 1025; the jumps are the alpha changes)
   conv_forces_M05_a125, conv_forces_M08_a125, conv_forces_M125_a125, conv_forces_M08_CL04: |C^n - C|
   of CL, CD, CM on the finest grid (2049, 1025 for fixed CL) against the iteration (C = converged
@@ -36,9 +36,7 @@ DPI = 600
 # (figure tag, folder, grids)
 GRIDS = [129, 257, 513, 1025, 2049]
 CASES = [("M05_a125", "Mach_05_alpha_125", GRIDS),
-         ("M08_a0", "Mach_08_alpha_0", GRIDS),
          ("M08_a125", "Mach_08_alpha_125", GRIDS),
-         ("M125_a0", "Mach_125_alpha_0", GRIDS),
          ("M125_a125", "Mach_125_alpha_125", GRIDS),
          ("M08_CL04", "Mach_08_CL_04", GRIDS[:-1])]
 

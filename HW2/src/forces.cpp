@@ -6,6 +6,7 @@ namespace euler {
 
     constexpr double PI = 3.14159265358979323846; // MSVC has no M_PI by default
 
+    // Wall pressure of each wall face, from the averaged state 1/2 (W_ghost + W_interior).
     void wall_pressure(const Mesh& m, const Flow& f, std::vector<double>& pw)
     {
         pw.resize(m.nic);
@@ -20,6 +21,7 @@ namespace euler {
         }
     }
 
+    // Wall pressure extrapolated linearly to the face midpoint from cells (i, 0) and (i, 1).
     void wall_pressure_extrapolated(const Mesh& m, const Flow& f, std::vector<double>& pw)
     {
         pw.resize(m.nic);
@@ -31,11 +33,11 @@ namespace euler {
             const double nx = m.njx[a];     // wall normal into the fluid
             const double ny = m.njy[a];
             double p[2]; // pressure of cells (i, 0) and (i, 1)
-            double d[2]; // their normal distances to the wall face
+            double d[2]; // their normal distance to the wall face
             for (int jj = 0; jj < 2; ++jj) {
-                const int c = m.cell(i, jj);
-                double w[NEQ];
-                double q[NEQ];
+                const int c = m.cell(i, jj); // cell (i, jj)
+                double w[NEQ];               // its conservative state
+                double q[NEQ];               // its primitive state
                 for (int k = 0; k < NEQ; ++k) {
                     w[k] = f.W[k][c];
                 }
@@ -47,10 +49,11 @@ namespace euler {
                                           m.y[m.node(i, jj + 1)]);
                 d[jj] = (xc - xm) * nx + (yc - ym) * ny;
             }
-            pw[i] = p[0] - d[0] * (p[1] - p[0]) / (d[1] - d[0]);
+            pw[i] = p[0] - d[0] * (p[1] - p[0]) / (d[1] - d[0]); // linear in d, evaluated at d = 0
         }
     }
 
+    // Sum the pressure force and moment of every wall face, then the coefficients.
     Forces integrate_forces(const Mesh& m, const std::vector<double>& pw, const Freestream& fs, const ForceRef& ref)
     {
         Forces F;
@@ -64,13 +67,13 @@ namespace euler {
             const double fy = -dp * m.njy[fc] * m.sj[fc];         // same, y
             F.fx += fx;
             F.fy += fy;
-            F.mz += (xm - ref.xref) * fy - (ym - ref.yref) * fx;
+            F.mz += (xm - ref.xref) * fy - (ym - ref.yref) * fx; // counter-clockwise positive
         }
         const double a = fs.alpha_deg * PI / 180.0;  // angle of attack
         const double q = 0.5 * fs.mach * fs.mach;    // dynamic pressure (rho_inf = 1, |V_inf| = M)
         F.cl = (F.fy * std::cos(a) - F.fx * std::sin(a)) / (q * ref.chord);
         F.cd = (F.fx * std::cos(a) + F.fy * std::sin(a)) / (q * ref.chord);
-        F.cm = -F.mz / (q * ref.chord * ref.chord);
+        F.cm = -F.mz / (q * ref.chord * ref.chord); // nose-up positive
         return F;
     }
 

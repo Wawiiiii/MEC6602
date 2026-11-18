@@ -8,19 +8,19 @@ namespace euler {
 
     constexpr int NB = NEQ * NEQ; // number of entries of one 4x4 block
 
+    // Flux Jacobian A = dFc/dW through the normal (nx, ny), q in primitive variables.
     void flux_jacobian(const double q[NEQ], double nx, double ny, double A[NEQ * NEQ])
     {
         const double g1 = GAMMA - 1.0;                              // gamma - 1
         const double u = q[1];                                      // x velocity
         const double v = q[2];                                      // y velocity
-        const double V = u * nx + v * ny;                           // contravariant velocity V = V.n
+        const double V = u * nx + v * ny;                           // contravariant velocity u nx + v ny
         const double q2 = u * u + v * v;                            // |V|^2
         const double phi = 0.5 * g1 * q2;                           // phi = (gamma-1) |V|^2 / 2
         const double H = GAMMA / g1 * q[3] / q[0] + 0.5 * q2;       // total enthalpy H
 
         /*
-        dFc/dW with p = (gamma-1) (rho E - ((rho u)^2 + (rho v)^2) / (2 rho)),
-        i.e. dp/dW = (gamma-1) (|V|^2/2, -u, -v, 1)  (Blazek, 2D Euler Jacobian):
+        Rows of dFc/dW, with dp/dW = (gamma-1) (|V|^2/2, -u, -v, 1) (Blazek):
           row 0: d(rho V)
           row 1: d(rho u V + nx p)
           row 2: d(rho v V + ny p)
@@ -47,16 +47,17 @@ namespace euler {
         A[15] = GAMMA * V;
     }
 
+    // Roe dissipation matrix |A~| at the Roe state of (qL, qR), Harten entropy fix included.
     void roe_abs_matrix(const double qL[NEQ], const double qR[NEQ], double nx, double ny, double absA[NEQ * NEQ],
                         double harten_fraction)
     {
         const double g1 = GAMMA - 1.0; // gamma - 1
 
-        // Total enthalpy on each side (same as roe_flux).
+        // Total enthalpy on each side.
         const double HL = GAMMA / g1 * qL[3] / qL[0] + 0.5 * (qL[1] * qL[1] + qL[2] * qL[2]); // left total enthalpy
         const double HR = GAMMA / g1 * qR[3] / qR[0] + 0.5 * (qR[1] * qR[1] + qR[2] * qR[2]); // right total enthalpy
 
-        // Roe average state (slide 9), copied from roe_flux.
+        // Roe-averaged state, same as roe_flux.
         const double sL = std::sqrt(qL[0]);                       // sqrt of left density
         const double sR = std::sqrt(qR[0]);                       // sqrt of right density
         const double wL = sL / (sL + sR);                         // Roe weight of the left state
@@ -70,20 +71,12 @@ namespace euler {
         const double V_t = u_t * nx + v_t * ny;                   // V~ (contravariant)
         const double c2 = c_t * c_t;                              // c~^2
 
-        // Harten-corrected eigenvalues (slide 11), same as roe_flux.
+        // Harten-corrected eigenvalues, same as roe_flux.
         const double delta = harten_fraction * c_t;          // entropy fix width
         const double l1 = harten(std::abs(V_t - c_t), delta); // |lambda_1|,     V~ - c~
         const double l234 = harten(std::abs(V_t), delta);     // |lambda_2,3,4|, V~
         const double l5 = harten(std::abs(V_t + c_t), delta); // |lambda_5|,     V~ + c~
 
-        /*
-        Column c of |A~| = |A~| e_c (e_c = unit conservative vector).
-        The conservative jump e_c is turned into primitive jumps by linearizing at the Roe
-        state (Roe's identities, exact for the real jumps W_R - W_L):
-          drho = e0,  du = (e1 - u~ e0)/rho~,  dv = (e2 - v~ e0)/rho~,
-          dp = (gamma-1) (e3 - u~ e1 - v~ e2 + q~^2/2 e0)
-        then the dissipation formula of roe_flux (slide 8, |dF1| + |dF2,3,4| + |dF5|) is applied.
-        */
         for (int c = 0; c < NEQ; ++c) {
             double e[NEQ] = {0.0, 0.0, 0.0, 0.0}; // unit conservative jump e_c
             e[c] = 1.0;
@@ -107,31 +100,25 @@ namespace euler {
         }
     }
 
+    // First-order Roe face Jacobians dF/dW_L and dF/dW_R, per unit length.
     void roe_face_jacobians(const double qL[NEQ], const double qR[NEQ], double nx, double ny, double dFdL[NEQ * NEQ],
                             double dFdR[NEQ * NEQ])
     {
         double AL[NB];   // A(W_L)
         double AR[NB];   // A(W_R)
-        double absA[NB]; // |A~| at the Roe state, frozen (slide 26)
+        double absA[NB]; // |A~| at the Roe state, frozen
         flux_jacobian(qL, nx, ny, AL);
         flux_jacobian(qR, nx, ny, AR);
         roe_abs_matrix(qL, qR, nx, ny, absA);
 
-        // Slide 27: dF/dW_L = 1/2 (A_L + |A~|), dF/dW_R = 1/2 (A_R - |A~|).
+        // dF/dW_L = 1/2 (A_L + |A~|), dF/dW_R = 1/2 (A_R - |A~|).
         for (int k = 0; k < NB; ++k) {
             dFdL[k] = 0.5 * (AL[k] + absA[k]);
             dFdR[k] = 0.5 * (AR[k] - absA[k]);
         }
     }
 
-    /*
-       Exact flux (per unit length) of a physical boundary face as a function of the interior
-       cell only, rebuilt like apply_bc + j_face_flux do it:
-         wall    : W_g = wall_ghost(W_d)
-         farfield: W_g = 2 Wb - W_d, Wb = farfield_state(W_d, free stream, outward normal)
-         flux    = Fc(1/2 (W_g + W_d)) through the stored face normal (fnx, fny).
-       (onx, ony) = outward normal (farfield) or the wall normal (wall, either direction).
-    */
+
     static void boundary_flux(const double wd[NEQ], bool wall, const Freestream& fs, double onx, double ony,
                               double fnx, double fny, double F[NEQ], const double* w1 = nullptr)
     {
@@ -142,7 +129,7 @@ namespace euler {
             double qg[NEQ]; // ghost, primitive
             wall_ghost(qd, onx, ony, qg);
             if (w1) {
-                // Extrapolated wall pressure (bc.h / apply_bc): p_g = max(2 p_0 - p_1, 0.2 p_0).
+                // Extrapolated wall pressure (as in apply_bc): p_g = max(2 p_0 - p_1, 0.2 p_0).
                 double q1[NEQ]; // second cell off the wall, primitive
                 cons_to_prim(w1, q1);
                 qg[3] = std::max(2.0 * qd[3] - q1[3], 0.2 * qd[3]);
@@ -168,9 +155,8 @@ namespace euler {
     }
 
     /*
-       dF_boundary/dW_d by central finite differences of boundary_flux (slide 30: derivative of
-       the BC times the flux derivative, done in one go), step h = 1e-7 (|W_c| + rho).
-       J[r * NEQ + c] = d F_r / d W_d,c.
+       dF_boundary/dW_d by central finite differences of boundary_flux,
+       step h = 1e-7 (|W_c| + rho). J[r * NEQ + c] = dF_r / dW_d,c.
     */
     static void boundary_flux_jacobian(const double wd[NEQ], bool wall, const Freestream& fs, double onx, double ony,
                                        double fnx, double fny, double J[NEQ * NEQ])
@@ -185,7 +171,7 @@ namespace euler {
             }
             wp[c] += h;
             wm[c] -= h;
-            const double h2 = wp[c] - wm[c]; // the step actually taken (round-off safe)
+            const double h2 = wp[c] - wm[c]; // step actually taken (round-off)
 
             double Fp[NEQ]; // flux at W_d + h e_c
             double Fm[NEQ]; // flux at W_d - h e_c
@@ -198,8 +184,8 @@ namespace euler {
     }
 
     /*
-       Wall face with the extrapolated ghost pressure: the flux depends on the first two cells off
-       the wall, W_0 (= wd) and W_1. J0 = dF/dW_0, J1 = dF/dW_1, central finite differences.
+       Wall face with extrapolated ghost pressure: the flux depends on W_0 (= wd) and W_1.
+       J0 = dF/dW_0, J1 = dF/dW_1, by central finite differences.
     */
     static void wall_flux_jacobians(const double wd[NEQ], const double w1[NEQ], const Freestream& fs, double fnx,
                                     double fny, double J0[NEQ * NEQ], double J1[NEQ * NEQ])
@@ -217,7 +203,7 @@ namespace euler {
                 }
                 wp[c] += h;
                 wm[c] -= h;
-                const double h2 = wp[c] - wm[c]; // the step actually taken
+                const double h2 = wp[c] - wm[c]; // step actually taken
                 double Fp[NEQ];
                 double Fm[NEQ];
                 if (which == 0) {
@@ -242,6 +228,7 @@ namespace euler {
         }
     }
 
+    // First-order implicit matrix: dR/dW (Roe face Jacobians + boundary terms) plus diag_add on D.
     void assemble_first_order_jacobian(const Mesh& m, const Flow& f, const Freestream& fs, JminBc jmin,
                                        const std::vector<double>& diag_add, BlockMatrix& M)
     {
@@ -251,13 +238,7 @@ namespace euler {
         }
         M.resize(m.nic, m.njc);
 
-        /*
-        i-faces, i = 0..nic-1: face i has left cell west(i) and right cell i. Face 0 is the
-        TE cut, it couples cell nic-1 (across the cut) with cell 0; the face i = ni-1 of the
-        residual is the same physical face, so it is not visited again (each face once).
-        Residual signs: R_left += F dS, R_right -= F dS (slide 26).
-        */
-        // OpenMP: one j row per thread iteration; a row's i-faces only touch blocks of that row.
+
 #pragma omp parallel for schedule(static)
         for (int j = 0; j < m.njc; ++j) {
             double qL[NEQ];  // left state at the face (cell value, first order)
@@ -286,7 +267,7 @@ namespace euler {
 
         /*
         Interior j-faces, j = 1..njc-1: left cell (i, j-1) = south, right cell (i, j) = north.
-        OpenMP: one i column per thread iteration (a j-face touches two rows but one column).
+        OpenMP: one i column per thread (a j-face touches two rows but one column).
         */
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < m.nic; ++i) {
@@ -313,14 +294,8 @@ namespace euler {
             }
         }
 
-        /*
-        Physical boundary faces (slide 30): the ghost is a function of the interior cell, so the
-        whole face flux depends on the interior cell only and its derivative goes on D.
-          j = 0     : interior cell on the RIGHT -> R_d -= F dS.
-                      Wall: wall_ghost with the face normal; Farfield: outward normal -(njx, njy).
-          j = nj-1  : farfield, interior cell on the LEFT -> R_d += F dS, outward normal +(njx, njy).
-        */
-        // OpenMP: one i column per thread iteration (each column has its own boundary cells).
+
+        // OpenMP: one i column per thread.
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < m.nic; ++i) {
             double wd[NEQ]; // interior cell, conservative
@@ -337,7 +312,7 @@ namespace euler {
                     wd[k] = f.W[k][cd];
                 }
                 if (jmin == JminBc::Wall && WALL_PRESSURE_EXTRAPOLATE && WALL_EXTRAP_ACTIVE && m.njc > 1) {
-                    // Extrapolated wall pressure: the flux also depends on cell (i, 1) -> north block.
+                    // Extrapolated wall pressure: the flux also depends on cell (i, 1), north block.
                     const int c1 = m.cell(i, 1); // second cell off the wall
                     double w1[NEQ];
                     double J1[NB];
@@ -369,7 +344,7 @@ namespace euler {
             }
         }
 
-        // Time term (slide 28): diag_add[p] (e.g. Omega_p / dt_p) on the diagonal of D_p.
+        // Time term: diag_add[p] (e.g. Omega_p / dt_p) on the diagonal of D_p.
         if (!diag_add.empty()) {
 #pragma omp parallel for schedule(static)
             for (int p = 0; p < ncell; ++p) {

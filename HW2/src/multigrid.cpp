@@ -12,13 +12,15 @@
 
 namespace euler {
 
-    // ===================================================================== grids and transfer operators
+    // Grids and transfer operators (also used by the full multigrid start of every solver).
 
+    // Even cell counts, and at least 8 x 4 cells after halving.
     bool can_coarsen(const Mesh& m)
     {
         return m.nic % 2 == 0 && m.njc % 2 == 0 && m.nic / 2 >= 8 && m.njc / 2 >= 4;
     }
 
+    // Coarse mesh made of every other node of m.
     Mesh coarsen_mesh(const Mesh& m)
     {
         if (!can_coarsen(m)) {
@@ -38,7 +40,7 @@ namespace euler {
         c.y.assign(c.x.size(), nan);
         for (int J = 0; J < c.nj; ++J) {
             for (int I = 0; I < c.ni; ++I) {
-                c.x[c.node(I, J)] = m.x[m.node(2 * I, 2 * J)]; // every other node (slide 41)
+                c.x[c.node(I, J)] = m.x[m.node(2 * I, 2 * J)]; // every other node
                 c.y[c.node(I, J)] = m.y[m.node(2 * I, 2 * J)];
             }
         }
@@ -46,6 +48,7 @@ namespace euler {
         return c;
     }
 
+    // Coarse value = area-weighted average of its 4 fine cells (solution restriction).
     void restrict_volume_average(const Mesh& mf, const Mesh& mc, const std::vector<double>& fine,
                                  std::vector<double>& coarse)
     {
@@ -65,6 +68,7 @@ namespace euler {
         }
     }
 
+    // Coarse value = sum of its 4 fine cells (residual restriction).
     void restrict_sum(const Mesh& mf, const Mesh& mc, const std::vector<double>& fine, std::vector<double>& coarse)
     {
         for (int J = 0; J < mc.njc; ++J) {
@@ -80,9 +84,10 @@ namespace euler {
         }
     }
 
+    // Bilinear prolongation of a coarse cell array to the fine cells.
     void prolong_bilinear(const Mesh& mf, const Mesh& mc, const std::vector<double>& coarse, std::vector<double>& fine)
     {
-        // Coarse value with the boundary rules: periodic in I across the cut, J clamped at wall / farfield.
+        // Coarse value: periodic in I across the cut, J clamped at wall / farfield.
         auto cval = [&](int I, int J) {
             I = (I + mc.nic) % mc.nic;
             J = std::min(std::max(J, 0), mc.njc - 1);
@@ -94,12 +99,13 @@ namespace euler {
                 const int J = j / 2;
                 const int In = (i % 2 == 0) ? I - 1 : I + 1; // nearest coarse neighbour in i
                 const int Jn = (j % 2 == 0) ? J - 1 : J + 1; // nearest coarse neighbour in j
-                // Slide 50: 9/16 own cell, 3/16 the two side neighbours, 1/16 the corner neighbour.
+                // 9/16 own cell, 3/16 the two side neighbours, 1/16 the corner neighbour.
                 fine[mf.cell(i, j)] = (9.0 * cval(I, J) + 3.0 * cval(In, J) + 3.0 * cval(I, Jn) + cval(In, Jn)) / 16.0;
             }
         }
     }
 
+    // The n_levels - 1 coarse meshes below m, coarsest first.
     std::vector<Mesh> coarse_hierarchy(const Mesh& m, int n_levels)
     {
         std::vector<Mesh> h;
@@ -112,6 +118,7 @@ namespace euler {
         return h;
     }
 
+    // Fine cells = value of their coarse cell, for every variable.
     void inject_piecewise_constant(const Mesh& mf, const Mesh& mc, const Flow& coarse, Flow& fine)
     {
         for (int k = 0; k < NEQ; ++k) {
@@ -123,9 +130,10 @@ namespace euler {
         }
     }
 
+    // Number of levels: halve until can_coarsen fails or s.levels is reached (0 = no limit).
     int multigrid_levels(const Mesh& m, const MultigridSettings& s)
     {
-        int n = 1;    // levels
+        int n = 1;    // number of levels
         int nic = m.nic;
         int njc = m.njc;
         while ((s.levels <= 0 || n < s.levels) && nic % 2 == 0 && njc % 2 == 0 && nic / 2 >= 8 && njc / 2 >= 4) {
@@ -136,18 +144,19 @@ namespace euler {
         return n;
     }
 
+    // Relaxation factor of the correction prolonged into a level of the given order.
     double correction_relax(const MultigridSettings& s, Order level_order)
     {
         if (level_order == Order::First) {
-            return 1.0; // first-order level: the coarse operator is the same discretisation, no mismatch
+            return 1.0; // first-order level: same discretisation as the coarse levels
         }
         if (s.relax > 0.0) {
             return s.relax;
         }
-        return s.smoother == MgSmoother::RK ? 0.5 : 1.0; // automatic (multigrid.h, DEVIATIONS.md B18)
+        return s.smoother == MgSmoother::RK ? 0.5 : 1.0; // automatic: 0.5 with RK, 1 with SGS
     }
 
-    // ===================================================================== the cycle
+    // FAS multigrid cycle (scheme = mg).
 
     namespace {
 
@@ -213,7 +222,7 @@ namespace euler {
             return omega;
         }
 
-        // n multistage iterations on R + Q (slide 47).
+        // n multistage iterations on R + Q.
         void smooth_rk(Level& L, const Freestream& fs, const MultigridSettings& s, int n)
         {
             for (int it = 0; it < n; ++it) {
@@ -240,7 +249,7 @@ namespace euler {
             }
         }
 
-        // n implicit Euler steps (Omega/dt + J1) dW = -(R + Q), solved by block SGS (slides 25-35).
+        // n implicit Euler steps (Omega/dt + J1) dW = -(R + Q), solved by block SGS.
         void smooth_sgs(Level& L, const Freestream& fs, const MultigridSettings& s, int n)
         {
             const int nc = L.m.nic * L.m.njc;        // physical cells
@@ -290,6 +299,7 @@ namespace euler {
             }
         }
 
+        // n smoothing iterations with the chosen smoother.
         void smooth(Level& L, const Freestream& fs, const MultigridSettings& s, int n)
         {
             if (n <= 0) {
@@ -302,7 +312,7 @@ namespace euler {
             }
         }
 
-        // Restriction from level l to level l+1: solution, then forcing function (slides 45-46, 51).
+        // Restriction from level l to level l+1: solution, then forcing function.
         void go_down(std::vector<Level>& L, int l, const Freestream& fs, const MultigridSettings& s)
         {
             Level& F = L[l];
@@ -325,7 +335,7 @@ namespace euler {
             }
         }
 
-        // Prolongation of the correction from level l+1 to level l (slides 48, 50), scaled by correction_relax.
+        // Prolongation of the correction from level l+1 to level l, scaled by correction_relax.
         void come_up(std::vector<Level>& L, int l, const MultigridSettings& s)
         {
             Level& F = L[l];
@@ -342,7 +352,7 @@ namespace euler {
                 dW[k].assign(F.f.W[k].size(), 0.0);
                 prolong_bilinear(F.m, C.m, dc, dW[k]);
             }
-            // Under-relaxation of the correction going into a second-order level (DEVIATIONS.md B18).
+            // Under-relaxation of the correction going into a second-order level.
             const double relax = correction_relax(s, F.order);
             const double omega = relax * change_factor(F, dW, s.max_change);
             for (int k = 0; k < NEQ; ++k) {
@@ -373,6 +383,7 @@ namespace euler {
 
     }
 
+    // Multigrid solver: build the levels, optional FMG start, then cycles until convergence.
     RunResult run_multigrid(const Mesh& m, Flow& f, const Freestream& fs, const MultigridSettings& s)
     {
         const int nlev = multigrid_levels(m, s); // number of levels
@@ -401,7 +412,7 @@ namespace euler {
         }
         WALL_EXTRAP_ACTIVE = true;
 
-        // Full multigrid start (slide 42): cycles on each coarse level, coarsest first, then inject.
+        // Full multigrid start: cycles on each coarse level, coarsest first, then inject.
         if (s.fmg_cycles > 0 && nlev > 1) {
             for (int l = nlev - 1; l >= 1; --l) {
                 for (int c = 0; c < s.fmg_cycles; ++c) {

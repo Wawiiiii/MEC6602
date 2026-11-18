@@ -29,3 +29,11 @@ __pycache__/
 # Microsoft
 Microsoft/
 .claude/settings.local.json
+
+# LaTeX build files of the HW2 report
+HW2/report/*.aux
+HW2/report/*.lof
+HW2/report/*.lot
+HW2/report/*.out
+HW2/report/*.toc
+HW2/report/*.log

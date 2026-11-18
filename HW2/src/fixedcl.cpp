@@ -14,14 +14,15 @@ namespace euler {
         return std::abs(cl - s_.cl_target) <= s_.cl_tol;
     }
 
+    // Fixed-CL step: change alpha once the flow is converged enough and CL is off target.
     bool FixedClController::update(double norm, double cl, bool flow_converged)
     {
         if (!s_.on) {
             return false;
         }
-        // Largest residual since the last change: the reference of the "converged enough" test.
+        // Largest residual since the last change: reference of the "converged enough" test.
         ref_ = std::max(ref_, norm);
-        const bool ready = flow_converged || norm <= s_.drop * ref_; // slide 9: compute to "convergence"
+        const bool ready = flow_converged || norm <= s_.drop * ref_; // converged enough
         if (!ready || on_target(cl)) {
             return false; // keep iterating the flow at this alpha
         }
@@ -29,13 +30,14 @@ namespace euler {
         const double err = s_.cl_target - cl; // CL_t - CL
         double step = 0.0;                    // alpha change, degrees
         if (!have_old_ || cl == cl_old_) {
-            step = std::copysign(s_.dalpha0, err); // slide 9 step 5: small perturbation (towards the target)
+            step = std::copysign(s_.dalpha0, err); // first step: small perturbation towards the target
         } else {
-            step = err * (alpha_ - alpha_old_) / (cl - cl_old_); // slide 9 step 7a, secant (sign: A29)
+            // Secant: dalpha = (CL_t - CL) / (dCL/dalpha); CL too low -> alpha up
+            step = err * (alpha_ - alpha_old_) / (cl - cl_old_);
         }
-        step = std::clamp(step, -s_.max_dalpha, s_.max_dalpha);
+        step = std::clamp(step, -s_.max_dalpha, s_.max_dalpha); // at most max_dalpha per change
 
-        // Slide 9 steps 7b-7c: store alpha_old, CL_old, then alpha = alpha + dalpha.
+        // Store alpha_old, CL_old, then alpha = alpha + dalpha.
         alpha_old_ = alpha_;
         cl_old_ = cl;
         have_old_ = true;

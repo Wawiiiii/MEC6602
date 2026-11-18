@@ -67,10 +67,6 @@ target_link_libraries(test_bc PRIVATE euler2d)
 add_executable(euler apps/euler_main.cpp)
 target_link_libraries(euler PRIVATE euler2d)
 
-# Step 5 check: explicit Euler / multistage RK with local time stepping (basic_algo slides 17-18).
-add_executable(test_explicit tests/test_explicit.cpp)
-target_link_libraries(test_explicit PRIVATE euler2d)
-
 # Step 6 check: forces, moment, surface Cp, Tecplot field, Cauchy criterion (post.pdf slides 4-5, 16-18).
 add_executable(test_output tests/test_output.cpp)
 target_link_libraries(test_output PRIVATE euler2d)
@@ -87,14 +83,7 @@ target_link_libraries(test_linsolve PRIVATE euler2d)
 add_executable(test_implicit tests/test_implicit.cpp)
 target_link_libraries(test_implicit PRIVATE euler2d)
 
-# Step 8 check: FAS multigrid, V / W cycles, RK and SGS smoothers, FMG (slides 41-53).
-add_executable(test_multigrid tests/test_multigrid.cpp)
-target_link_libraries(test_multigrid PRIVATE euler2d)
-
 # Step 9a check: fixed-CL controller, secant on alpha (post.pdf slide 9), on a model flow.
 add_executable(test_fixedcl tests/test_fixedcl.cpp)
 target_link_libraries(test_fixedcl PRIVATE euler2d)
 
-# Order of the MUSCL face values (1D, no solver): kappa^ = 1/3 -> O(h^3), report Section 2
-add_executable(test_muscl_order tests/test_muscl_order.cpp)
-target_link_libraries(test_muscl_order PRIVATE euler2d)

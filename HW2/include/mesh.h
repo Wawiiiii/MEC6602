@@ -32,18 +32,6 @@ namespace euler {
 
         std::vector<double> x; // node x coordinates, size ni_tot * nj_tot (ghosts = NaN until filled)
         std::vector<double> y; // node y coordinates, size ni_tot * nj_tot (ghosts = NaN until filled)
-
-        /*
-           Metrics (Euler2D slide 21), filled by compute_metrics().
-           A face is stored at the index of its first node, node(i, j):
-             i-face (i, j): edge node(i,j) -> node(i,j+1),  i = 0..ni-1, j = 0..njc-1,
-                            "left" cell (i-1, j), "right" cell (i, j)
-             j-face (i, j): edge node(i,j) -> node(i+1,j),  i = 0..nic-1, j = 0..nj-1,
-                            "left" cell (i, j-1), "right" cell (i, j)
-           Normals are unit vectors from left to right (towards +i or +j).
-           At the boundaries the left or right cell is a ghost cell.
-           Unused slots (ghosts) stay NaN, except the ghost-cell areas (see compute_metrics).
-        */
         std::vector<double> vol; // cell area Omega (the 2D "volume"), size nic_tot * njc_tot, ghosts filled
         std::vector<double> nix; // i-face unit normal, x component, size ni_tot * nj_tot
         std::vector<double> niy; // i-face unit normal, y component, size ni_tot * nj_tot
@@ -60,18 +48,13 @@ namespace euler {
     };
 
     /*
-       Read a single-block 2D plot3D file (Euler2D slide 18):
+       Read a single-block 2D plot3D file
          nblock
          ni nj
          all x (i fastest, then j), then all y in the same order
     */
     Mesh read_plot3d(const std::string& filename);
 
-    /*
-       Compute the cell areas, face unit normals and face lengths (Euler2D slide 21)
-       of the physical cells and faces. Throws if a cell area is not positive
-       (cell corners not counter-clockwise, or a folded cell).
-    */
     void compute_metrics(Mesh& m);
 
 }

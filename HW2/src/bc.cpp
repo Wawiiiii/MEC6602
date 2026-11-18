@@ -61,13 +61,13 @@ namespace euler {
         const double rc = rho0 * c0; // acoustic impedance rho0 c0
         double pb;                   // boundary pressure
         if (Vd < 0.0) {
-            // Subsonic inflow (slide 15).
+            // Subsonic inflow.
             pb = 0.5 * (qa[3] + qd[3] - rc * (nx * (qa[1] - qd[1]) + ny * (qa[2] - qd[2])));
             qb[0] = qa[0] + (pb - qa[3]) / (c0 * c0);
             qb[1] = qa[1] - nx * (qa[3] - pb) / rc;
             qb[2] = qa[2] - ny * (qa[3] - pb) / rc;
         } else {
-            // Subsonic outflow (slide 16).
+            // Subsonic outflow.
             pb = qa[3];
             qb[0] = qd[0] + (pb - qd[3]) / (c0 * c0);
             qb[1] = qd[1] + nx * (qd[3] - pb) / rc;
@@ -122,7 +122,7 @@ namespace euler {
             }
         };
 
-        // jmax, farfield (after the wall, whose ghosts the vortex correction's CL needs).
+        // jmax farfield. With the vortex correction it runs after the wall (its CL needs the wall ghosts).
         auto farfield_jmax = [&](double cl, bool vortex) {
 #pragma omp parallel for schedule(static)
             for (int i = 0; i < m.nic; ++i) {
@@ -148,7 +148,7 @@ namespace euler {
         // jmin: every i column is independent (its own wall ghosts): parallel loop.
 #pragma omp parallel for schedule(static)
         for (int i = 0; i < m.nic; ++i) {
-            // jmin: the j-face normal at j = 0 points into the fluid.
+            // The j-face normal at j = 0 points into the fluid.
             const int fw = m.node(i, 0); // wall face storage index
             if (jmin == JminBc::Farfield) {
                 farfield_ghost(m.cell(i, 0), m.cell(i, -1), m.cell(i, -2), -m.njx[fw], -m.njy[fw], fs.q); // flip: out of the domain
@@ -166,7 +166,7 @@ namespace euler {
             cons_to_prim(wi, qi);
             wall_ghost(qi, m.njx[fw], m.njy[fw], qg);
             if (WALL_PRESSURE_EXTRAPOLATE && WALL_EXTRAP_ACTIVE) {
-                // Study option (bc.h): ghost pressure extrapolated from cells (i, 0) and (i, 1).
+                // Option (bc.h): ghost pressure extrapolated from cells (i, 0) and (i, 1).
                 const int c1 = m.cell(i, 1); // second cell off the wall
                 double w1[NEQ];              // its conservative state
                 double q1[NEQ];              // its primitive state
@@ -176,19 +176,18 @@ namespace euler {
                 cons_to_prim(w1, q1);
                 /*
                 Only the pressure changes: rho_g = rho_i and the mirrored velocity are kept, so the
-                face average 1/2 (W_g + W_i) still has exactly zero normal momentum (no mass or energy
-                through the wall). (A first version also changed rho_g isentropically: that leaked mass.)
+                face average 1/2 (W_g + W_i) still has zero normal momentum (no flux through the wall).
                 */
                 qg[3] = std::max(2.0 * qi[3] - q1[3], 0.2 * qi[3]); // extrapolated, kept positive
             }
             prim_to_cons(qg, wg);
             for (int k = 0; k < NEQ; ++k) {
-                f.W[k][m.cell(i, -1)] = wg[k]; // ghost 1 (slide: cell 1)
-                f.W[k][m.cell(i, -2)] = wg[k]; // ghost 2 (slide: cell 0), same rho and p as cell 2
+                f.W[k][m.cell(i, -1)] = wg[k]; // ghost 1
+                f.W[k][m.cell(i, -2)] = wg[k]; // ghost 2, same as ghost 1
             }
         }
 
-        // Vortex correction: current CL from the wall pressure (wall ghosts are now set), then the farfield.
+        // Vortex correction: current CL from the wall pressure, then the farfield.
         if (vortex) {
             std::vector<double> pw; // wall-face pressure
             wall_pressure(m, f, pw);
@@ -198,9 +197,7 @@ namespace euler {
 
         /*
         i-cut, done last: cell (-g, j) is cell (nic-g, j), cell (nic-1+g, j) is cell (g-1, j).
-        The copy also runs over the ghost rows j < 0 and j >= njc, which were just filled above:
-        this fills the corner ghost blocks with the wall / farfield ghosts of the cells across
-        the cut (needed by the cell -> node interpolation of the output at the TE nodes).
+        Running over the ghost rows too fills the corner ghosts, used by the output at the TE nodes.
         */
         for (int k = 0; k < NEQ; ++k) {
             for (int j = -NG; j < m.njc + NG; ++j) {

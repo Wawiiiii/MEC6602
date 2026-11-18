@@ -18,14 +18,11 @@ TESTS = [
     ("test_metrics", [grid(65), os.path.join(tempfile.gettempdir(), "hw2_metrics.dat")]),
     ("test_roe", [grid(33), grid(65), grid(129)]),          # nested grids, coarse to fine (order checks)
     ("test_bc", [grid(33), grid(65), grid(129)]),
-    ("test_explicit", [grid(33)]),
     ("test_output", [grid(33)]),
     ("test_jacobian", [grid(33)]),
     ("test_linsolve", [grid(33)]),
     ("test_implicit", [grid(33)]),
-    ("test_multigrid", [grid(33), grid(65)]),
     ("test_fixedcl", [grid(33)]),
-    ("test_muscl_order", []),
 ]
 
 

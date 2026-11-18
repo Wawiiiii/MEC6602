@@ -1,8 +1,0 @@
-=== 2026-11-15 12:33:19  host j5015-17.meca.polymtl.ca, queue j17f
-=== 2026-11-15 12:33:19  run_queue.py started (queue j17f)
-=== 2026-11-15 12:33:19  Mach_125_alpha_0_vanalbada  2049x2049  attempt 1  (M 1.25, alpha 0, limiter on, limiter van_albada, threads 9, fmg True, gmres_restart 200, gmres_max_iter 800, tol 1e-10, cfl0 10, gmres_fail 1e-2, cauchy_window 10, cauchy_tol 1e-6, max_iter 60)
-    j17f queue (re)started 2026-11-16 00:00:54 by Claude (Mon 00:05: queue processes on -17/-04 found dead (solvers alive), restarted; M 0.8 a0 VA 9-1025 moved j04d -> j01e)
-=== 2026-11-16 00:00:54  host j5015-17.meca.polymtl.ca, queue j17f
-    adopted running solver 881518: Mach_125_alpha_0_vanalbada 2049x2049 attempt 1
-    j17f: Mach_125_alpha_0_vanalbada 2049x2049 stopped 2026-11-16 00:17:37 by Claude (user: M 1.25 Van Albada 2049 runs not needed)
-=== 2026-11-16 00:17:37  queue done (stopped, case removed)

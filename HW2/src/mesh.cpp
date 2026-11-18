@@ -7,6 +7,7 @@
 
 namespace euler {
 
+    // Read a single-block 2D plot3D file into the physical nodes (ghost nodes stay NaN).
     Mesh read_plot3d(const std::string& filename)
     {
         std::ifstream in(filename);
@@ -25,10 +26,7 @@ namespace euler {
             throw std::runtime_error("bad grid dimensions in " + filename);
         }
 
-        /*
-           Derived sizes. The file only gives the node counts ni, nj.
-           Example 9x9 file: 9 nodes -> 8 cells; with ghosts 13 nodes, 12 cells.
-        */
+        // Derived sizes. Example 9x9 file: 9 nodes -> 8 cells; with ghosts 13 nodes, 12 cells.
         m.nic     = m.ni - 1;       // physical cells in i (around the airfoil)
         m.njc     = m.nj - 1;       // physical cells in j (wall to farfield)
         m.ni_tot  = m.ni + 2 * NG;  // stored nodes in i, ghosts included
@@ -41,7 +39,7 @@ namespace euler {
         m.x.assign(static_cast<size_t>(m.ni_tot) * m.nj_tot, nan);
         m.y.assign(m.x.size(), nan);
 
-        // plot3D order
+        // plot3D order: all x (i fastest), then all y.
         for (std::vector<double>* coord : {&m.x, &m.y}) {
             for (int j = 0; j < m.nj; ++j) {
                 for (int i = 0; i < m.ni; ++i) {
@@ -57,10 +55,7 @@ namespace euler {
             throw std::runtime_error("unexpected extra values in " + filename);
         }
 
-        /*
-           O-grid cut at the trailing edge: the i = 0 and i = ni-1 lines must be 
-           the same points
-        */
+        // O-grid cut at the trailing edge: the i = 0 and i = ni-1 lines must be the same points.
         for (int j = 0; j < m.nj; ++j) {
             const int a = m.node(0, j);
             const int b = m.node(m.ni - 1, j);
@@ -72,6 +67,7 @@ namespace euler {
         return m;
     }
 
+    // Cell areas, face lengths and unit face normals.
     void compute_metrics(Mesh& m)
     {
         const double nan = std::numeric_limits<double>::quiet_NaN();
@@ -87,10 +83,8 @@ namespace euler {
         m.sj.assign(x.size(), nan);
 
         /*
-           Cell areas: Omega = 0.5 |a x b|, a and b the two diagonals (slide 21).
-           We keep the sign of the cross product as a check: it is positive when the
-           corners (i,j), (i+1,j), (i+1,j+1), (i,j+1) turn counter-clockwise. The
-           normal directions below rely on that, so a non-positive area is an error.
+           Cell areas: Omega = 0.5 |a x b|, a and b the two diagonals.
+           The signed area must be positive (corners counter-clockwise): the normals below rely on it.
         */
         for (int j = 0; j < m.njc; ++j) {
             for (int i = 0; i < m.nic; ++i) {
@@ -114,11 +108,9 @@ namespace euler {
         }
 
         /*
-           Ghost-cell areas. The MUSCL limiter uses eps = Omega^2 of the cell a face state
-           comes from (Roe_scheme_accel slide 16), and at a boundary face that cell is a ghost.
-             i-cut (imin/imax): the ghost cells ARE the cells across the cut -> copy them.
-             wall (jmin) and farfield (jmax): the ghost cell is the mirror image of the
-             interior cell -> same area (ghost -1 <-> cell 0, ghost -2 <-> cell 1).
+           Ghost-cell areas, for the MUSCL limiter eps (muscl.h) at boundary faces.
+             i-cut: the ghost cells are the cells across the cut -> copy them.
+             wall and farfield: mirror of the interior cell (ghost -1 <-> cell 0, ghost -2 <-> cell 1).
            The four corner ghost blocks are never used and stay NaN.
         */
         for (int j = 0; j < m.njc; ++j) {
@@ -135,9 +127,8 @@ namespace euler {
         }
 
         /*
-           i-faces: edge vector t = node(i,j+1) - node(i,j) runs along +j.
-           Normal = transpose of the edge vector (slide 21): (ty, -tx) / |t|,
-           which points towards +i, i.e. from cell (i-1, j) to cell (i, j).
+           i-faces: edge t = node(i,j+1) - node(i,j). Normal (ty, -tx) / |t|,
+           pointing from cell (i-1, j) to cell (i, j).
         */
         for (int j = 0; j < m.njc; ++j) {
             for (int i = 0; i < m.ni; ++i) {
@@ -153,9 +144,8 @@ namespace euler {
         }
 
         /*
-           j-faces: edge vector t = node(i+1,j) - node(i,j) runs along +i.
-           Normal = (-ty, tx) / |t|, which points towards +j,
-           i.e. from cell (i, j-1) to cell (i, j). At j = 0 (wall) it points into the fluid.
+           j-faces: edge t = node(i+1,j) - node(i,j). Normal (-ty, tx) / |t|,
+           pointing from cell (i, j-1) to cell (i, j). At the wall (j = 0) it points into the fluid.
         */
         for (int j = 0; j < m.nj; ++j) {
             for (int i = 0; i < m.nic; ++i) {

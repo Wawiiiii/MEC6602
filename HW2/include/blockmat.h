@@ -7,23 +7,13 @@
 namespace euler {
 
     /*
-       Block-structured sparse matrix of the implicit operator (Roe_scheme_accel slides 28-29):
+       Block-structured sparse matrix of the implicit operator 
        4x4 blocks (NEQ = 4), one block row per PHYSICAL cell, five blocks per row:
          D  : diagonal block            (cell (i, j) itself)
          Wb : west  neighbour (i-1, j)  (i = 0     -> i = nic-1, across the TE cut)
          Eb : east  neighbour (i+1, j)  (i = nic-1 -> i = 0,     across the TE cut)
-         Sb : south neighbour (i, j-1)  (zero at j = 0: wall, boundary lumped on D, slide 30)
+         Sb : south neighbour (i, j-1)  (zero at j = 0: wall, boundary lumped on D)
          Nb : north neighbour (i, j+1)  (zero at j = njc-1: farfield, lumped on D)
-
-       Compact numbering of the physical cells (no ghosts): p = j * nic + i.
-       A vector of unknowns has size NEQ * nic * njc, entry [p * NEQ + k], k = equation
-       (conservative variables rho, rho u, rho v, rho E).
-       A block is stored row-major: block(p)[r * NEQ + c] = d R_p,r / d W_q,c  (r = row, c = column).
-       Each array has size nic * njc * NEQ * NEQ; block of cell p starts at p * NEQ * NEQ.
-
-       Row p of y = M x:
-         y_p = D_p x_p + Wb_p x_west(p) + Eb_p x_east(p) + Sb_p x_south(p) + Nb_p x_north(p)
-       (the south / north terms are absent at j = 0 / j = njc-1).
     */
     struct BlockMatrix {
         int nic = 0;            // physical cells in i

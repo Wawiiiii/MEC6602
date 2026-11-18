@@ -1,9 +1,0 @@
-Case
-  mesh          grids/2049x2049.x  (2049 x 2049 nodes)
-  Mach          1.2500
-  alpha         1.2500 deg
-  order         2
-  solver        implicit bdf1 + gmres, CFL 10 -> 1e+08
-  threads       14
-  FMG start: 257 x 257, 89 iterations, 57.09 s, drop 1.8e-09
-  FMG start: 513 x 513, 39 iterations, 3430.10 s, drop 6.9e-07

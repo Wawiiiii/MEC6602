@@ -8,19 +8,18 @@
 
 namespace euler {
 
+    // Runge-Kutta coefficients and CFL for the spatial order and number of stages.
     RkScheme rk_scheme(Order spatial, int stages)
     {
         RkScheme s;
         if (stages == 1) {
             s.stages = 1;
             s.alpha[0] = 1.0;
-            s.cfl = 0.9; // explicit Euler: CFL lower than 1 (slide 17)
+            s.cfl = 0.9; // explicit Euler: CFL lower than 1
             return s;
         }
 
-        /*
-        Slide 18 table, upwind schemes. Rows: stages 3, 4, 5; first value = CFL, then alpha_1 .. alpha_m.
-        */
+        // Coefficient table, upwind schemes. Rows: 3, 4, 5 stages; columns: CFL, then alpha_1 .. alpha_m.
         static const double first[3][6] = {
             {1.5, 0.1481, 0.4000, 1.0000, 0.0, 0.0},     // 1st-order scheme, 3 stages
             {2.0, 0.0833, 0.2069, 0.4265, 1.0000, 0.0},  // 1st-order scheme, 4 stages
@@ -32,7 +31,7 @@ namespace euler {
             {1.15, 0.0695, 0.1602, 0.2898, 0.5060, 1.0000} // 2nd-order scheme, 5 stages
         };
         if (stages < 3 || stages > 5) {
-            throw std::runtime_error("rk_scheme: stages must be 1, 3, 4 or 5 (slide 18)");
+            throw std::runtime_error("rk_scheme: stages must be 1, 3, 4 or 5");
         }
         const double* row = (spatial == Order::First ? first : second)[stages - 3]; // table row
         s.stages = stages;
@@ -43,6 +42,7 @@ namespace euler {
         return s;
     }
 
+    // Local time step dt = CFL Omega / (Lambda_I + Lambda_J) of every physical cell.
     void local_time_step(const Mesh& m, const Flow& f, double cfl, std::vector<double>& dt)
     {
         dt.resize(m.vol.size());
@@ -55,7 +55,7 @@ namespace euler {
                 const double v = f.Q[2][c];                      // y velocity
                 const double a = std::sqrt(GAMMA * f.Q[3][c] / rho); // speed of sound
 
-                // I direction: the two i-faces of the cell are stored at node(i, j) and node(i+1, j).
+                // I direction: i-faces at node(i, j) and node(i+1, j).
                 const int fa = m.node(i, j);
                 const int fb = m.node(i + 1, j);
                 const double nIx = 0.5 * (m.nix[fa] + m.nix[fb]); // averaged i normal, x
@@ -76,12 +76,13 @@ namespace euler {
         }
     }
 
+    /*
+       RMS of R_rho / Omega over the physical cells.
+       Rows are summed in parallel, then added in order, so the result does not depend on the
+       number of threads.
+    */
     double density_residual_norm(const Mesh& m, const Flow& f)
     {
-        /*
-        Row sums in parallel, then the rows added in order: the same result whatever the number of
-        threads (an OpenMP reduction would add in a thread-dependent order).
-        */
         std::vector<double> row(m.njc, 0.0); // sum of (R_rho / Omega)^2 over each j row
 #pragma omp parallel for schedule(static)
         for (int j = 0; j < m.njc; ++j) {
@@ -135,11 +136,12 @@ namespace euler {
     {
         if (row_open_) {
             std::printf("\n");
-            std::fflush(stdout); // the row reaches a redirected terminal file at once (stall watch, run_queue.py)
+            std::fflush(stdout); // show the row at once, also when the output is redirected to a file
             row_open_ = false;
         }
     }
 
+    // Store and print iteration it, then apply the stopping tests.
     bool Monitor::record(int it, double norm, const Forces& F, RunResult& r)
     {
         if (it == 1) {
@@ -158,7 +160,7 @@ namespace euler {
             std::fprintf(hist_, "%d %.10e %.10e %.12e %.12e %.12e %.4f\n", it, norm, norm / r.res0, F.cl, F.cd, F.cm,
                          r.seconds);
         }
-        // Terminal: one row per printed iteration, in columns under a header printed once.
+        // Terminal: one row per printed iteration, under a header printed once.
         if (print_every_ > 0 && (it == 1 || it % print_every_ == 0)) {
             if (!header_printed_) {
                 std::printf("\n%7s %11s %10s %14s %14s %14s %9s%s\n", "iter", "||R_rho||", "drop", "CL", "CD", "CM",
@@ -175,6 +177,7 @@ namespace euler {
             }
         }
 
+        // Stopping tests: divergence, residual drop, Cauchy criterion.
         if (!std::isfinite(norm)) {
             r.diverged = true;
             end_row();
@@ -203,10 +206,11 @@ namespace euler {
                 return true;
             }
         }
-        // The iteration limit is the loop bound of the solvers: iteration max_iter still does its update.
+        // The iteration limit is the solvers' loop bound: iteration max_iter still does its update.
         return false;
     }
 
+    // Explicit multi-stage Runge-Kutta run with local time steps.
     RunResult run_explicit(const Mesh& m, Flow& f, const Freestream& fs, const ExplicitSettings& s)
     {
         RunResult res;
@@ -216,10 +220,10 @@ namespace euler {
             W0[k].resize(f.W[k].size());
         }
         Monitor mon(s.max_iter, s.tol_drop, s.cauchy_window, s.cauchy_tol, s.print_every, s.history_file);
-        WALL_EXTRAP_ACTIVE = WALL_EXTRAP_SWITCH >= 1.0; // extrapolated wall ghost from the start or later (bc.h)
+        WALL_EXTRAP_ACTIVE = WALL_EXTRAP_SWITCH >= 1.0; // extrapolated wall pressure from the start or later (bc.h)
 
         for (int it = 1; it <= s.max_iter; ++it) {
-            // 1. residual, time step and forces of W^n (ghosts up to date for the wall pressure).
+            // 1. Residual, time step and forces of W^n (ghosts up to date for the wall pressure).
             apply_bc(m, f, fs, s.jmin);
             compute_residual(m, f, s.order);
             local_time_step(m, f, s.rk.cfl, dt);
@@ -227,11 +231,12 @@ namespace euler {
             if (mon.record(it, norm, compute_forces(m, f, fs, s.ref), res)) {
                 break;
             }
+            // Switch to the extrapolated wall pressure once the residual has dropped enough.
             if (WALL_PRESSURE_EXTRAPOLATE && !WALL_EXTRAP_ACTIVE && norm <= WALL_EXTRAP_SWITCH * res.res0) {
                 WALL_EXTRAP_ACTIVE = true; // from the next stage on
             }
 
-            // 2. stages. W(0) = W^n on the physical cells.
+            // 2. Stages: W(k) = W(0) - alpha_k dt/Omega R(W(k-1)), W(0) = W^n.
             for (int k = 0; k < NEQ; ++k) {
                 W0[k] = f.W[k];
             }
@@ -253,7 +258,7 @@ namespace euler {
                 }
             }
         }
-        // Leave the ghosts consistent with the final W (for outputs).
+        // Ghosts consistent with the final W (for outputs).
         apply_bc(m, f, fs, s.jmin);
         return res;
     }

@@ -43,11 +43,7 @@ namespace euler {
         }
     }
 
-    /*
-       Largest factor omega <= 1 such that W + omega dW changes rho and p by at most max_change
-       (relative) in every cell and keeps them positive. Startup safeguard only: near convergence
-       the updates are small and omega = 1 (full Newton / implicit step).
-    */
+
     static double update_factor(const Mesh& m, const Flow& f, const std::vector<double>& dW, double max_change)
     {
         double omega = 1.0;
@@ -57,8 +53,8 @@ namespace euler {
                 const size_t p = static_cast<size_t>(j * m.nic + i) * NEQ;
                 double w[NEQ];  // current state
                 double w1[NEQ]; // updated state
-                double q[NEQ];
-                double q1[NEQ];
+                double q[NEQ];  // current state, primitive
+                double q1[NEQ]; // updated state, primitive
                 for (int k = 0; k < NEQ; ++k) {
                     w[k] = f.W[k][c];
                     w1[k] = w[k] + dW[p + k];
@@ -66,7 +62,7 @@ namespace euler {
                 cons_to_prim(w, q);
                 cons_to_prim(w1, q1);
                 const double drho = std::abs(q1[0] - q[0]); // density change
-                const double dp = std::abs(q1[3] - q[3]);   // pressure change (full step)
+                const double dp = std::abs(q1[3] - q[3]);   // pressure change
                 if (drho > max_change * q[0]) {
                     omega = std::min(omega, max_change * q[0] / drho);
                 }
@@ -78,16 +74,17 @@ namespace euler {
         return omega;
     }
 
+    // Implicit run: BDF1 / BDF2 / ROW time scheme, GMRES or SGS linear solves, optional fixed CL.
     RunResult run_implicit(const Mesh& m, Flow& f, const Freestream& fs_in, const ImplicitSettings& s)
     {
         RunResult res;
-        Freestream fs = fs_in;                          // free stream of this run (alpha changes in fixed-CL mode)
-        FixedClController ctl(s.fixed_cl, fs.alpha_deg); // fixed-CL controller (does nothing when off)
+        Freestream fs = fs_in;                          // free stream (alpha moves in fixed-CL mode)
+        FixedClController ctl(s.fixed_cl, fs.alpha_deg); // fixed-CL controller (idle when off)
         const int nc = m.nic * m.njc;                 // physical cells
         const size_t n = static_cast<size_t>(NEQ) * nc; // unknowns
         const double gamma_row = 1.0 + 1.0 / std::sqrt(2.0); // ROS2 gamma
 
-        Flow fp = f;                 // scratch flow for perturbed states (matrix-free products, ROW stage 2)
+        Flow fp = f;                 // scratch flow for perturbed states (J v products, ROW stage 2)
         BlockMatrix M;               // first-order implicit operator
         std::vector<double> Dfact;   // factorised diagonal blocks
         std::vector<double> diag(nc); // c Omega / dt of each cell
@@ -102,8 +99,8 @@ namespace euler {
         std::vector<double> Rp(n);   // perturbed residual, compact
         Monitor mon(s.max_iter, s.tol_drop, s.cauchy_window, s.cauchy_tol, s.print_every, s.history_file);
         mon.set_extra_columns("  |       CFL  lin_its   lin_res  update"); // printed after the linear solve
-        WALL_EXTRAP_ACTIVE = WALL_EXTRAP_SWITCH >= 1.0; // extrapolated wall ghost from the start or later (bc.h)
-        double cfl_cap = s.cfl_max; // CFL cap of the backtracking (lowered when GMRES fails)
+        WALL_EXTRAP_ACTIVE = WALL_EXTRAP_SWITCH >= 1.0; // extrapolated wall pressure from the start or later (bc.h)
+        double cfl_cap = s.cfl_max; // CFL cap, lowered when GMRES fails
 
         for (int it = 1; it <= s.max_iter; ++it) {
             // Residual, forces, convergence check of W^n.
@@ -112,7 +109,7 @@ namespace euler {
             const double norm = density_residual_norm(m, f);
             const Forces Fn = compute_forces(m, f, fs, s.ref); // forces of W^n
             bool stop = mon.record(it, norm, Fn, res);
-            // Fixed CL: a converged flow (residual or Cauchy) with CL off target is not the end, alpha moves.
+            // Fixed CL: a converged flow with CL off target does not stop the run, alpha moves.
             const bool flow_converged = res.converged; // residual drop reached
             if (stop && s.fixed_cl.on && !res.diverged && !ctl.on_target(Fn.cl) && it < s.max_iter) {
                 stop = false;
@@ -125,18 +122,19 @@ namespace euler {
                 }
                 break;
             }
+            // Switch to the extrapolated wall pressure once the residual has dropped enough.
             if (WALL_PRESSURE_EXTRAPOLATE && !WALL_EXTRAP_ACTIVE && norm <= WALL_EXTRAP_SWITCH * res.res0) {
-                WALL_EXTRAP_ACTIVE = true; // from the next residual on (the CFL ramp follows the residual jump)
-                mon.end_row();             // the message goes on its own line
+                WALL_EXTRAP_ACTIVE = true; // from the next residual on
+                mon.end_row();             // message on its own line
                 if (s.print_every > 0) {
                     std::printf("           extrapolated wall pressure switched on\n");
                 }
             }
 
             /*
-            Fixed CL (post.pdf slide 9): when the flow is converged enough, the controller moves alpha.
-            The new free stream enters through the farfield BC, so the residual of W^n is recomputed with
-            it before the implicit step (the residual jumps, slide 10, and the CFL ramp follows).
+               Fixed CL: once the flow is converged enough, the controller moves alpha.
+               The new free stream enters through the farfield BC, so R(W^n) is recomputed before the
+               implicit step (the residual jumps and the CFL ramp follows).
             */
             double norm_step = norm; // residual norm used by the CFL ramp of this step
             if (ctl.update(norm, Fn.cl, flow_converged)) {
@@ -145,19 +143,19 @@ namespace euler {
                 apply_bc(m, f, fs, s.jmin);
                 compute_residual(m, f, s.order);
                 norm_step = density_residual_norm(m, f);
-                mon.end_row(); // the message goes on its own line
+                mon.end_row(); // message on its own line
                 if (s.print_every > 0) {
                     std::printf("           fixed CL: CL %.8f -> alpha %.6f -> %.6f deg (change %d)\n", Fn.cl, a_old,
                                 fs.alpha_deg, ctl.changes());
                 }
             }
 
-            // CFL ramp (slide 40), capped by the backtracking cap, and local time step.
+            // CFL ramp: CFL = CFL0 ||R_0|| / ||R||, within [CFL0, cfl_max] and the cap.
             const double cfl =
                 std::min(cfl_cap, std::min(s.cfl_max, std::max(s.cfl0, s.cfl0 * res.res0 / norm_step)));
             local_time_step(m, f, cfl, dt);
 
-            // Time-term coefficient c of c Omega / dt.
+            // Coefficient c of the time term c Omega / dt: BDF1 1, BDF2 3/2, ROW 1/gamma.
             double c = 1.0; // BDF1
             if (s.scheme == TimeScheme::BDF2 && it > 1) {
                 c = 1.5;
@@ -171,7 +169,7 @@ namespace euler {
                 }
             }
 
-            // First-order Jacobian + time term (slides 26-29), diagonal factorisation.
+            // First-order Jacobian + time term and factorised diagonal blocks.
             assemble_first_order_jacobian(m, f, fs, s.jmin, diag, M);
             factor_diagonal(M, Dfact);
 
@@ -180,8 +178,8 @@ namespace euler {
             const double normW = norm2(Wn);
 
             /*
-            Exact operator for GMRES: A v = c Omega/dt v + J v, with the Jacobian-free product
-            J v ~ (R(W^n + eps v) - R(W^n)) / eps, eps = sqrt(eps_machine) (1 + ||W||) / ||v|| (slide 40).
+               GMRES operator: A v = c Omega/dt v + J v, Jacobian-free
+               J v ~ (R(W^n + eps v) - R(W^n)) / eps,  eps = sqrt(eps_machine) (1 + ||W||) / ||v||.
             */
             auto apply_A = [&](const std::vector<double>& v, std::vector<double>& y) {
                 y.resize(n);
@@ -206,13 +204,14 @@ namespace euler {
                     }
                 }
             };
-            // Preconditioner: SGS sweeps on the first-order operator, from zero.
+            // Preconditioner: SGS sweeps on the first-order operator, starting from zero.
             auto apply_Minv = [&](const std::vector<double>& r, std::vector<double>& z) {
                 z.assign(n, 0.0);
                 block_sgs(M, Dfact, r, z, s.sgs_sweeps, s.sgs_omega);
             };
             int lin_its = 0;       // linear iterations of this nonlinear iteration
             double lin_res = 0.0;  // last linear relative residual
+            // One linear solve: GMRES, or SGS sweeps only.
             auto solve = [&](const std::vector<double>& b, std::vector<double>& x) {
                 x.assign(n, 0.0);
                 if (s.linsolve == LinearSolver::GMRES) {
@@ -225,7 +224,7 @@ namespace euler {
                 }
             };
 
-            // Right-hand side(s) and update.
+            // Right-hand side(s) and update dW.
             if (s.scheme == TimeScheme::ROW) {
                 for (size_t a = 0; a < n; ++a) {
                     rhs[a] = -Rn[a] / gamma_row;
@@ -272,9 +271,9 @@ namespace euler {
                 }
                 continue;
             }
-            cfl_cap = std::min(s.cfl_max, 2.0 * cfl_cap);
+            cfl_cap = std::min(s.cfl_max, 2.0 * cfl_cap); // accepted step: the cap goes back up
 
-            // Positivity / size limiter, then update W.
+            // Update limiter, then W = W + omega dW.
             const double omega = update_factor(m, f, dW, s.max_change);
             for (size_t a = 0; a < n; ++a) {
                 dW[a] *= omega;
@@ -282,7 +281,7 @@ namespace euler {
             set_plus(m, f.W, 1.0, dW, f.W);
             dWold = dW;
 
-            // Extra columns of this iteration's terminal row: CFL, linear iterations, linear residual, update factor.
+            // Extra terminal columns: CFL, linear iterations, linear residual, update factor.
             if (mon.row_open()) {
                 std::printf("  | %9.2e %8d %9.2e %7.3f", cfl, lin_its, lin_res, omega);
                 mon.end_row();

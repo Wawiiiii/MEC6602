@@ -1,5 +1,0 @@
-=== 2026-11-15 14:19:50  host j5015-18, queue j18g
-=== 2026-11-15 14:19:50  run_queue.py started (queue j18g)
-=== 2026-11-15 14:19:50  Mach_08_alpha_0_vanalbada  2049x2049  attempt 1  (M 0.8, alpha 0, limiter on, limiter van_albada, threads 13, fmg True, gmres_restart 200, gmres_max_iter 800, tol 1e-10)
-      2049x2049    0.800   0.000 -1.7814550753e-11  8.3470348428e-03  1.8900806237e-12     17  40744.99  converged   4.67e-11  bdf1-gmres      2  2026-11-16 01:58
-=== 2026-11-16 01:58:52  queue done

@@ -84,7 +84,7 @@ namespace euler {
         y.resize(x.size());
         const int nic = M.nic; // cells in i
         const int njc = M.njc; // cells in j
-        // Each output row is independent: OpenMP parallel loop over the j rows.
+        // Rows are independent: OpenMP loop over j.
 #pragma omp parallel for schedule(static)
         for (int j = 0; j < njc; ++j) {
             for (int i = 0; i < nic; ++i) {
@@ -121,18 +121,18 @@ namespace euler {
     bool invert4(const double A[NEQ * NEQ], double Ainv[NEQ * NEQ])
     {
         /*
-           Gauss-Jordan on the augmented matrix [a | Ainv], a = copy of A, Ainv starting as the identity.
-           Column c: pick the row with the largest |a(r, c)| for r >= c (partial pivoting), swap it up,
-           scale it to a unit pivot, then eliminate column c from all other rows. At the end a = I, Ainv = A^-1.
+           Gauss-Jordan on [a | Ainv], a = copy of A, Ainv = identity at the start.
+           Column c: swap up the row with the largest |a(r, c)|, r >= c (partial pivoting),
+           scale it to a unit pivot, eliminate column c from the other rows. At the end Ainv = A^-1.
         */
         double a[NB];       // working copy of A
-        double amax = 0.0;  // largest |entry| of A (scale for the singularity test)
+        double amax = 0.0;  // largest |entry| of A (scale of the singularity test)
         for (int k = 0; k < NB; ++k) {
             a[k] = A[k];
             Ainv[k] = 0.0;
             amax = std::max(amax, std::fabs(A[k]));
         }
-        const double tiny = 1e-14 * amax; // a pivot this small means numerically singular (condition ~ 1e14)
+        const double tiny = 1e-14 * amax; // smaller pivot = numerically singular block
         for (int k = 0; k < NEQ; ++k) {
             Ainv[k * NEQ + k] = 1.0;
         }
@@ -181,8 +181,8 @@ namespace euler {
         const int nc = M.ncell(); // number of cells
         Dinv.resize(static_cast<size_t>(nc) * NB);
         /*
-        Blocks are independent: OpenMP parallel loop. An exception cannot leave an OpenMP region,
-        so each block records success and the first failure is reported after the loop.
+        Blocks are independent: OpenMP loop. An exception cannot leave an OpenMP region,
+        so each block records success and the first failure is thrown after the loop.
         */
         std::vector<char> ok(static_cast<size_t>(nc), 1); // 1 = block inverted
 #pragma omp parallel for schedule(static)
@@ -216,7 +216,7 @@ namespace euler {
     // ---- block symmetric Gauss-Seidel ----
 
     /*
-       One Gauss-Seidel visit of cell (i, j) (slide 34 with 4x4 blocks):
+       One Gauss-Seidel visit of cell (i, j), with 4x4 blocks:
          r = b_p - Wb x_west - Eb x_east - Sb x_south - Nb x_north   (latest available x)
          x_p <- x_p + omega (D_p^-1 r - x_p)
     */
@@ -266,7 +266,7 @@ namespace euler {
         const int nic = M.nic; // cells in i
         const int njc = M.njc; // cells in j
         for (int s = 0; s < sweeps; ++s) {
-            // Forward pass (slide 35: lower blocks at k+1, upper blocks at k): i fastest, then j.
+            // Forward pass (lower blocks at k+1, upper blocks at k): i fastest, then j.
             for (int j = 0; j < njc; ++j) {
                 for (int i = 0; i < nic; ++i) {
                     sgs_visit(M, Dinv, b, x, i, j, omega);
@@ -283,6 +283,7 @@ namespace euler {
 
     // ---- restarted GMRES with right preconditioning ----
 
+    // Solve A x = b by GMRES(m) with right preconditioner Minv; x is the initial guess.
     GmresResult gmres(const LinearOperator& A, const LinearOperator& Minv, const std::vector<double>& b,
                       std::vector<double>& x, int restart, int max_iter, double rtol)
     {
@@ -303,7 +304,7 @@ namespace euler {
 
         /*
            Storage allocated once for the whole call:
-             V      m+1 Krylov vectors v_1 .. v_{m+1} (slide 39)
+             V      m+1 Krylov vectors v_1 .. v_{m+1}
              H      (m+1) x m Hessenberg matrix, column-major: H(i, j) = H[i + j (m+1)]
              cs, sn Givens rotations that make H upper triangular
              g      rotated right-hand side beta e_1; |g(k)| = residual norm after k iterations
@@ -319,6 +320,7 @@ namespace euler {
         auto h = [&](int i, int j) -> double& { return H[static_cast<size_t>(i) + static_cast<size_t>(j) * (m + 1)]; };
 
         int total = 0; // inner iterations done
+        // Restart loop: one GMRES(m) cycle per pass.
         for (;;) {
             // True residual r0 = b - A x (stored in w) and convergence test.
             A(x, w);
@@ -333,19 +335,20 @@ namespace euler {
                 return res;
             }
 
-            // v_1 = r0 / beta, g = beta e_1 (slide 39).
+            // v_1 = r0 / beta, g = beta e_1.
             for (size_t k = 0; k < n; ++k) {
                 V[0][k] = w[k] / beta;
             }
             std::fill(g.begin(), g.end(), 0.0);
             g[0] = beta;
 
+            // Arnoldi loop: one new Krylov vector per iteration.
             int kdim = 0; // Krylov dimension reached in this cycle
             for (int j = 0; j < m && total < max_iter; ++j) {
                 // w = A Minv v_j (right preconditioning).
                 Minv(V[j], z);
                 A(z, w);
-                const double wnorm0 = norm2(w); // ||w|| before orthogonalisation (breakdown reference)
+                const double wnorm0 = norm2(w); // ||w|| before orthogonalisation (breakdown test)
 
                 // Modified Gram-Schmidt: h_ij = w . v_i, w <- w - h_ij v_i.
                 for (int i = 0; i <= j; ++i) {
@@ -355,7 +358,7 @@ namespace euler {
                 const double hnext = norm2(w); // h_{j+1,j}
                 h(j + 1, j) = hnext;
 
-                // Apply the previous rotations to the new column, then build the one that zeroes h_{j+1,j}.
+                // Givens rotations: apply the previous ones, then build the one that zeroes h_{j+1,j}.
                 for (int i = 0; i < j; ++i) {
                     const double t = cs[i] * h(i, j) + sn[i] * h(i + 1, j); // rotated entry i
                     h(i + 1, j) = -sn[i] * h(i, j) + cs[i] * h(i + 1, j);
@@ -397,7 +400,7 @@ namespace euler {
                 y[i] = (h(i, i) != 0.0) ? s / h(i, i) : 0.0;
             }
 
-            // x = x + Minv (V y).
+            // x = x + Minv (V y), then restart.
             std::fill(w.begin(), w.end(), 0.0);
             for (int i = 0; i < kdim; ++i) {
                 axpy(y[i], V[i], w);

@@ -1,9 +1,0 @@
-# HW2 Euler solver - run summary, one line per run (new runs are appended)
-# CL, CD, CM : chord 1.00000, moment about (0.2500, 0.0000), CM nose-up positive
-# time_s     : wall-clock seconds of the solver iterations
-# drop       : final / first density residual
-# status     : converged (residual drop reached), cauchy (force criterion),
-#              max_iter (iteration limit, NOT converged), diverged
-#
-# grid          Mach   alpha                CL                CD                CM   iter    time_s  status          drop  scheme      order  date
-  1025x1025    0.500   0.000  6.1616728362e-13  6.5457309841e-06 -2.0315377120e-14     15   1861.73  converged   1.58e-13  bdf1-gmres      2  2026-11-15 11:12

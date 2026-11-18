@@ -7,6 +7,7 @@
 
 namespace euler {
 
+    // Tecplot file of the mesh nodes and the cell areas.
     void write_tecplot_mesh(const Mesh& m, const std::string& filename)
     {
         std::FILE* f = std::fopen(filename.c_str(), "w");
@@ -46,6 +47,7 @@ namespace euler {
         }
     }
 
+    // Tecplot file of the flow at the nodes: each node gets the average of its 4 cells.
     void write_tecplot_field(const Mesh& m, const Flow& f, const Freestream& fs, const std::string& filename)
     {
         const size_t nn = static_cast<size_t>(m.ni) * m.nj;         // number of nodes
@@ -96,6 +98,7 @@ namespace euler {
         std::fclose(out);
     }
 
+    // Cp at the wall face midpoints, with the force coefficients in the header.
     void write_surface_cp(const Mesh& m, const std::vector<double>& pw, const Freestream& fs, const ForceRef& ref,
                           const Forces& F, const std::string& filename)
     {
@@ -119,6 +122,7 @@ namespace euler {
         std::fclose(out);
     }
 
+    // Append one line per run to the summary file.
     void append_run_summary(const std::string& filename, const RunSummary& s, const ForceRef& ref)
     {
         std::FILE* out = std::fopen(filename.c_str(), "a"); // append: earlier runs are kept
