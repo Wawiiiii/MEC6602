@@ -24,6 +24,8 @@ TESTS = [
     ("test_linsolve", [grid(33)]),
     ("test_implicit", [grid(33)]),
     ("test_multigrid", [grid(33), grid(65)]),
+    ("test_fixedcl", [grid(33)]),
+    ("test_muscl_order", []),
 ]
 
 

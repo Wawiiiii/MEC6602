@@ -32,6 +32,7 @@ add_library(euler2d
     src/linsolve.cpp
     src/implicit.cpp
     src/multigrid.cpp
+    src/fixedcl.cpp
 )
 target_include_directories(euler2d PUBLIC include)
 if(MSVC)
@@ -89,3 +90,11 @@ target_link_libraries(test_implicit PRIVATE euler2d)
 # Step 8 check: FAS multigrid, V / W cycles, RK and SGS smoothers, FMG (slides 41-53).
 add_executable(test_multigrid tests/test_multigrid.cpp)
 target_link_libraries(test_multigrid PRIVATE euler2d)
+
+# Step 9a check: fixed-CL controller, secant on alpha (post.pdf slide 9), on a model flow.
+add_executable(test_fixedcl tests/test_fixedcl.cpp)
+target_link_libraries(test_fixedcl PRIVATE euler2d)
+
+# Order of the MUSCL face values (1D, no solver): kappa^ = 1/3 -> O(h^3), report Section 2
+add_executable(test_muscl_order tests/test_muscl_order.cpp)
+target_link_libraries(test_muscl_order PRIVATE euler2d)

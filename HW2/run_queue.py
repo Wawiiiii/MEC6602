@@ -131,6 +131,24 @@ QUEUES = {
     "j01e": [
         ("Mach_08_alpha_0_vanalbada", 0.8, 0.0, "on", VA, ALL[:8], "build/kappa/euler"),
     ],
+    # 2026-11-17, user: Part 5 matrix, fixed CL 0.4 at M 0.8 (post.pdf slide 9, DEVIATIONS A29), Hemker-Koren,
+    # grids up to 1025 for now; alpha 1.25 is the first guess (the solver moves it).
+    "part5": [
+        ("Mach_08_CL_04", 0.8, 1.25, "on", {"cl_target": "0.4"}, ALL[:8], "build/euler"),
+    ],
+    # 11:15: on 1025 the FMG start was already at CL 0.39999 (alpha from 513), but the slide's first
+    # perturbation of 0.1 deg moved the shock so far that the residual bounced at 1e-3 - 1e-2 for 50
+    # iterations and a secant step from an unsettled CL went the wrong way (1.4128 -> 1.3812 deg).
+    # Stopped (files kept as 1025x1025_*_dalpha01.txt). Fine grids: first perturbation 0.01 deg and a
+    # residual drop of 1e-3 before each alpha change. 2049 (part5c) only if 1025 converges (user).
+    "part5b": [
+        ("Mach_08_CL_04", 0.8, 1.25, "on", {"cl_target": "0.4", "cl_dalpha": "0.01", "cl_drop": "1e-3"},
+         ["1025x1025"], "build/euler"),
+    ],
+    "part5c": [
+        ("Mach_08_CL_04", 0.8, 1.25, "on", {"cl_target": "0.4", "cl_dalpha": "0.01", "cl_drop": "1e-3"},
+         ["2049x2049"], "build/euler"),
+    ],
     "m125": [
         ("Mach_125_alpha_0", 1.25, 0.0, "on", {}, ALL, "build/euler"),
         ("Mach_125_alpha_0_vanalbada", 1.25, 0.0, "on", VA, ALL, "build/euler"),

@@ -312,6 +312,15 @@ Metrics (Euler2D slide 21):
 - **Wall BC changed to the extrapolated ghost pressure (A20)** because with slide 14's P1 = P2 the CM
   converged at order ~1 and CL at ~1.5 (user requirement: order 2).
 
+### Step 9 – fixed CL (Part 5, post.pdf slide 9): DONE (2026-11-17), awaiting check
+- 9a `include/fixedcl.h`, `src/fixedcl.cpp`: FixedClController, secant on alpha (slide sign corrected, DEVIATIONS A29).
+- 9b hook in `run_implicit` (free stream rebuilt at each alpha change, residual recomputed before the step),
+  case keys `cl_target`, `cl_dalpha`, `cl_drop`, `cl_tol`, `cl_max_dalpha`; FMG coarse grids pass their alpha up;
+  final alpha in the Result block and in the summary file (scheme label `bdf1-gmres-cl`).
+- 9c checks: `test_fixedcl` 16/16 (model flow L1-L6, real solver L7 on 33x33); 65x65 M 0.8 CL 0.4 ->
+  alpha 1.3823072893 deg (36 it), plain run at that alpha CL 0.40000000771; 129x129 + FMG 3 -> alpha 1.3914429603.
+- Remaining: the production run on a fine grid (user).
+
 ### Grid convergence study (Part 3), M = 0.5, alpha = 1.25, BDF1 + GMRES, final defaults
 | grid (cells) | CL | CD | CM | implicit it | time |
 |---|---|---|---|---|---|

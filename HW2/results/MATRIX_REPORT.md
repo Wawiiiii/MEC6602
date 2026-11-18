@@ -1,6 +1,6 @@
 # Grid-study matrix report (generated, do not edit)
 
-Generated 2026-11-16 12:11 by `post/matrix_report.py` from the `*_summary.txt` files.
+Generated 2026-11-18 12:18 by `post/matrix_report.py` from the `*_summary.txt` files.
 Driver: `run_matrix.sh`, log `results/matrix.log`. Last log line:
 
     === 2026-11-15 21:57:57  queue done
@@ -274,6 +274,31 @@ Three-grid Richardson (r = (f3 - f2)/(f2 - f1), p = log2 r, f* = f1 - (f2 - f1)/
 | 128-256-512 | 2.48 | 1.793643e-01 | 2.57 | 1.793434e-05 | 2.14 | -2.252729e-03 |
 | 256-512-1024 | 2.29 | 1.793718e-01 | 2.69 | 2.172227e-05 | 1.95 | -2.253884e-03 |
 | 512-1024-2048 | 2.60 | 1.793695e-01 | 3.02 | 2.302986e-05 | 2.41 | -2.253247e-03 |
+
+## Mach_08_CL_04 (M 0.8, alpha 2.062, limiter on)
+
+| grid | CL | CD | CM | iter | time (s) | status | drop | retry |
+|---|---|---|---|---|---|---|---|---|
+| 9x9 | 3.9999999729e-01 | 8.2941420520e-02 | -6.8690715404e-02 | 21 | 0.0 | converged | 4.47e-14 |  |
+| 17x17 | 4.0000003292e-01 | 6.3135967624e-02 | -4.3537500981e-02 | 26 | 0.1 | converged | 8.13e-15 |  |
+| 33x33 | 4.0000000382e-01 | 4.0879184570e-02 | -4.5954928867e-02 | 29 | 0.1 | converged | 8.21e-14 |  |
+| 65x65 | 4.0000000772e-01 | 3.0665030090e-02 | -4.7536967951e-02 | 36 | 0.8 | converged | 3.13e-13 |  |
+| 129x129 | 3.9999958071e-01 | 2.7031873143e-02 | -4.7097757520e-02 | 54 | 8.0 | converged | 1.94e-15 |  |
+| 257x257 | 4.0000010089e-01 | 2.6342909885e-02 | -4.6588900009e-02 | 64 | 99.1 | converged | 4.70e-14 |  |
+| 513x513 | 4.0000061908e-01 | 2.6296788925e-02 | -4.6101641589e-02 | 73 | 963.1 | converged | 3.68e-14 |  |
+| 1025x1025 | 3.9999999757e-01 | 2.6311342199e-02 | -4.5912466850e-02 | 45 | 9890.1 | converged | 5.14e-13 |  |
+| 2049x2049 | (running, or failed: see 2049x2049_terminal*.txt) | | | | | | | attempt 4 (cfl_max 100, max_iter 1500, fmg_levels 4) |
+
+Three-grid Richardson (r = (f3 - f2)/(f2 - f1), p = log2 r, f* = f1 - (f2 - f1)/(2^p - 1)):
+
+| triplet (cells) | p CL | CL* | p CD | CD* | p CM | CM* |
+|---|---|---|---|---|---|---|
+| 8-16-32 | not monotone | - | -0.17 | 2.429590e-01 | not monotone | - |
+| 16-32-64 | not monotone | - | 1.12 | 2.200173e-02 | 0.61 | -5.053300e-02 |
+| 32-64-128 | not monotone | - | 1.49 | 2.502612e-02 | not monotone | - |
+| 64-128-256 | not monotone | - | 2.40 | 2.618169e-02 | -0.21 | -5.030673e-02 |
+| 128-256-512 | 0.01 | 4.001356e-01 | 3.90 | 2.629348e-02 | 0.06 | -3.510948e-02 |
+| 256-512-1024 | not monotone | - | not monotone | - | 1.36 | -4.579241e-02 |
 
 ## Mach_08_alpha_0 (M 0.8, alpha 0, limiter on)
 

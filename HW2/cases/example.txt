@@ -33,6 +33,12 @@ wall_extrap_switch = 1              # 1 = extrapolated from the start; e.g. 1e-3
 limiter_k          = 5              # limiter eps = (K h)^3; very large (1e6) = no limiting (smooth subsonic studies only)
 
 # --- Convergence ---
+# Fixed CL (post.pdf slide 9, Part 5; implicit schemes only): alpha above becomes the first guess
+# cl_target     = 0.4      # target CL (remove or "off" = normal run at fixed alpha)
+# cl_dalpha     = 0.1      # first perturbation of alpha, degrees
+# cl_drop       = 1e-2     # residual drop since the last alpha change before the next one
+# cl_tol        = 1e-6     # |CL - CL_target| accepted at the end
+# cl_max_dalpha = 2        # largest alpha change in one step, degrees
 max_iter      = 100        # iteration limit (implicit: ~10-30 needed; explicit RK: ~1e4-1e5)
 tol           = 1e-12      # stop when the density residual has dropped by this factor
 cauchy_window = 0          # Cauchy criterion on CL, CD, CM: window in iterations (0 = off), post.pdf slide 5

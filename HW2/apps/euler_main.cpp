@@ -45,6 +45,12 @@
                     ~1e-3 for supersonic cold starts); mirror before                           [1]
      farfield_vortex  on: free stream + point vortex of the current CL at the farfield (post.pdf
                     slide 22, Blazek; slides: not required for the homework); M < 1 only         [off]
+     --- fixed CL (post.pdf slide 9, Part 5; implicit schemes only, fixedcl.h) ---
+     cl_target   target lift coefficient: alpha becomes an unknown, "alpha" is the first guess  [off]
+     cl_dalpha   first perturbation of alpha, degrees                                        [0.1]
+     cl_drop     residual drop since the last alpha change before the next change            [1e-2]
+     cl_tol      |CL - CL_target| accepted at the end                                         [1e-6]
+     cl_max_dalpha  largest alpha change in one step, degrees                                 [2]
      max_iter    iteration limit                                                                 [100000]
      tol         stop when ||R_rho|| has dropped by this factor                                  [1e-12]
      cauchy_window  Cauchy criterion on CL, CD, CM: window in iterations (0 = off)               [0]
@@ -192,6 +198,15 @@ int main(int argc, char** argv)
         is.sgs_sweeps = std::stoi(take(kv, "sgs_sweeps", "2"));
         is.sgs_omega = std::stod(take(kv, "sgs_omega", "1.0"));
         is.max_change = std::stod(take(kv, "max_change", "0.5"));
+        const std::string cl_target = take(kv, "cl_target", "off");        // fixed-CL mode (post.pdf slide 9)
+        is.fixed_cl.on = cl_target != "off";
+        if (is.fixed_cl.on) {
+            is.fixed_cl.cl_target = std::stod(cl_target);
+        }
+        is.fixed_cl.dalpha0 = std::stod(take(kv, "cl_dalpha", "0.1"));
+        is.fixed_cl.drop = std::stod(take(kv, "cl_drop", "1e-2"));
+        is.fixed_cl.cl_tol = std::stod(take(kv, "cl_tol", "1e-6"));
+        is.fixed_cl.max_dalpha = std::stod(take(kv, "cl_max_dalpha", "2"));
         euler::LIMITER_K = std::stod(take(kv, "limiter_k", "5"));            // limiter eps = (K h)^3, muscl.h
         const std::string kappa = take(kv, "muscl_kappa", "off");            // study only: unlimited kappa scheme, muscl.h
         euler::MUSCL_KAPPA_ON = kappa != "off";
@@ -257,6 +272,9 @@ int main(int argc, char** argv)
         s.order = order == 1 ? euler::Order::First : euler::Order::Second;
         const bool multigrid = scheme == "mg";                // FAS multigrid cycle
         const bool implicit = scheme != "rk" && !multigrid;   // one of the implicit schemes
+        if (is.fixed_cl.on && !implicit) {
+            throw std::runtime_error("cl_target (fixed CL) needs an implicit scheme: bdf1, bdf2 or row");
+        }
         if (multigrid) {
             ms.gamma = mg_cycle == "v" ? 1 : 2;
             if (mg_cycle != "v" && mg_cycle != "w") {
@@ -317,7 +335,7 @@ int main(int argc, char** argv)
         euler::compute_metrics(m);
         euler::Flow f;
         euler::allocate_flow(m, f);
-        const euler::Freestream fs = euler::make_freestream(mach, alpha);
+        euler::Freestream fs = euler::make_freestream(mach, alpha); // fixed CL: alpha is updated after each run
         euler::init_freestream(f, fs);
 
         // One run of the chosen solver on a given mesh (used for the FMG coarse grids too).
@@ -353,7 +371,7 @@ int main(int argc, char** argv)
                           ms.gamma == 1 ? "V" : "W", euler::multigrid_levels(m, ms), mg_smoother.c_str(),
                           ms.smoother == euler::MgSmoother::RK ? ms.fine_rk.cfl : ms.sgs_cfl);
         } else if (implicit) {
-            label = scheme + "-" + lin;
+            label = scheme + "-" + lin + (is.fixed_cl.on ? "-cl" : "");
             std::snprintf(solver, sizeof(solver), "implicit %s + %s, CFL %.3g -> %.3g", scheme.c_str(), lin.c_str(),
                           is.cfl0, is.cfl_max);
         } else {
@@ -365,7 +383,13 @@ int main(int argc, char** argv)
         std::printf("Case\n");
         std::printf("  mesh          %s  (%d x %d nodes)\n", mesh_file.c_str(), m.ni, m.nj);
         std::printf("  Mach          %.4f\n", mach);
-        std::printf("  alpha         %.4f deg\n", alpha);
+        if (is.fixed_cl.on) {
+            std::printf("  alpha         %.4f deg (first guess)\n", alpha);
+            std::printf("  fixed CL      CL target %.6f, tol %.1e, first dalpha %.3g deg, alpha change at a drop of %.1e\n",
+                        is.fixed_cl.cl_target, is.fixed_cl.cl_tol, is.fixed_cl.dalpha0, is.fixed_cl.drop);
+        } else {
+            std::printf("  alpha         %.4f deg\n", alpha);
+        }
         std::printf("  order         %d\n", order);
         std::printf("  solver        %s\n", solver);
         std::printf("  threads       %d\n", euler::get_threads());
@@ -390,14 +414,22 @@ int main(int argc, char** argv)
                     euler::inject_piecewise_constant(coarse[l], coarse[l - 1], prev, cf);
                 }
                 const euler::RunResult rc = run_solver(coarse[l], cf, fmg_tol, "", 0);
-                std::printf("  FMG start: %d x %d, %d iterations, %.2f s, drop %.1e\n", coarse[l].ni, coarse[l].nj,
+                std::printf("  FMG start: %d x %d, %d iterations, %.2f s, drop %.1e", coarse[l].ni, coarse[l].nj,
                             rc.iterations, rc.seconds, rc.res / rc.res0);
+                if (is.fixed_cl.on) {
+                    fs = euler::make_freestream(mach, rc.alpha_deg); // the next grid starts from this alpha
+                    std::printf(", alpha %.6f deg (CL %.6f)", rc.alpha_deg, rc.forces.cl);
+                }
+                std::printf("\n");
                 prev = cf;
             }
             euler::inject_piecewise_constant(m, coarse.back(), prev, f);
         }
 
         const euler::RunResult r = run_solver(m, f, s.tol_drop, s.history_file, s.print_every);
+        if (is.fixed_cl.on) {
+            fs = euler::make_freestream(mach, r.alpha_deg); // outputs (force directions, title) at the final alpha
+        }
         const char* status = r.diverged ? "DIVERGED"
                            : r.converged ? "converged (residual drop reached)"
                            : r.cauchy ? "converged (Cauchy criterion on the forces)"
@@ -417,6 +449,10 @@ int main(int argc, char** argv)
         std::printf("  iterations    %d\n", r.iterations);
         std::printf("  time          %.2f s\n", r.seconds);
         std::printf("  residual      %.3e -> %.3e   (drop %.2e)\n", r.res0, r.res, r.res / r.res0);
+        if (is.fixed_cl.on) {
+            std::printf("  alpha         %.10f deg  (fixed CL %.6f, %d alpha changes on this grid)\n", fs.alpha_deg,
+                        is.fixed_cl.cl_target, r.alpha_changes);
+        }
         std::printf("  CL            %17.10e\n", F.cl);
         std::printf("  CD            %17.10e\n", F.cd);
         std::printf("  CM            %17.10e\n", F.cm);
@@ -442,7 +478,7 @@ int main(int argc, char** argv)
             rs.ni = m.ni;
             rs.nj = m.nj;
             rs.mach = mach;
-            rs.alpha_deg = alpha;
+            rs.alpha_deg = fs.alpha_deg; // the final alpha in fixed-CL mode
             rs.order = order;
             rs.scheme = label;
             rs.status = r.diverged ? "diverged" : r.converged ? "converged" : r.cauchy ? "cauchy" : "max_iter";

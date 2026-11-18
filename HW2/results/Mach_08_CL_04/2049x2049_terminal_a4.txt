@@ -1,0 +1,10 @@
+Case
+  mesh          grids/2049x2049.x  (2049 x 2049 nodes)
+  Mach          0.8000
+  alpha         1.2500 deg (first guess)
+  fixed CL      CL target 0.400000, tol 1.0e-06, first dalpha 0.01 deg, alpha change at a drop of 1.0e-03
+  order         2
+  solver        implicit bdf1 + gmres, CFL 1 -> 100
+  threads       20
+  FMG start: 257 x 257, 1500 iterations, 966.49 s, drop 3.2e-05, alpha 1.352125 deg (CL 0.390082)
+  FMG start: 513 x 513, 1500 iterations, 4237.38 s, drop 1.1e-05, alpha 1.426480 deg (CL 0.403995)

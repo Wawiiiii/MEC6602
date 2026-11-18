@@ -81,6 +81,8 @@ namespace euler {
         std::vector<double> cd;        // CD of every iteration
         std::vector<double> cm;        // CM of every iteration
         Forces forces;                 // forces of the last iteration
+        double alpha_deg = 0.0;        // angle of attack at the end (changes in fixed-CL mode, fixedcl.h)
+        int alpha_changes = 0;         // alpha changes of the fixed-CL mode
     };
     using ExplicitResult = RunResult;
 

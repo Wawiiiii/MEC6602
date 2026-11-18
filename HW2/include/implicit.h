@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bc.h"
+#include "fixedcl.h"
 #include "flow.h"
 #include "forces.h"
 #include "mesh.h"
@@ -65,6 +66,7 @@ namespace euler {
         ForceRef ref;                           // force reference
         int print_every = 1;                    // print every N iterations
         std::string history_file;               // history file (empty = none)
+        FixedClSettings fixed_cl;               // fixed-CL mode, secant on alpha (post.pdf slide 9, fixedcl.h)
     };
 
     /*
@@ -79,6 +81,10 @@ namespace euler {
        used; after every successful step the cap doubles (up to cfl_max). Without it, GMRES on
        513x513 (M 0.8 and M 1.25) stagnates completely (relative residual 1.00) once the CFL reaches
        ~1e4 - 1e7, the update is zero, the residual and so the CFL stay the same: a permanent stall.
+       Fixed-CL mode (s.fixed_cl.on, post.pdf slide 9): alpha is corrected by FixedClController during
+       the iterations; the free stream (farfield BC, force directions) is rebuilt at each change. The
+       run only counts as converged when the residual has dropped AND |CL - CL_t| <= cl_tol. The final
+       alpha is returned in RunResult::alpha_deg.
     */
     RunResult run_implicit(const Mesh& m, Flow& f, const Freestream& fs, const ImplicitSettings& s);
 

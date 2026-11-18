@@ -78,9 +78,11 @@ namespace euler {
         return omega;
     }
 
-    RunResult run_implicit(const Mesh& m, Flow& f, const Freestream& fs, const ImplicitSettings& s)
+    RunResult run_implicit(const Mesh& m, Flow& f, const Freestream& fs_in, const ImplicitSettings& s)
     {
         RunResult res;
+        Freestream fs = fs_in;                          // free stream of this run (alpha changes in fixed-CL mode)
+        FixedClController ctl(s.fixed_cl, fs.alpha_deg); // fixed-CL controller (does nothing when off)
         const int nc = m.nic * m.njc;                 // physical cells
         const size_t n = static_cast<size_t>(NEQ) * nc; // unknowns
         const double gamma_row = 1.0 + 1.0 / std::sqrt(2.0); // ROS2 gamma
@@ -108,7 +110,16 @@ namespace euler {
             apply_bc(m, f, fs, s.jmin);
             compute_residual(m, f, s.order);
             const double norm = density_residual_norm(m, f);
-            if (mon.record(it, norm, compute_forces(m, f, fs, s.ref), res)) {
+            const Forces Fn = compute_forces(m, f, fs, s.ref); // forces of W^n
+            bool stop = mon.record(it, norm, Fn, res);
+            // Fixed CL: a converged flow (residual or Cauchy) with CL off target is not the end, alpha moves.
+            const bool flow_converged = res.converged; // residual drop reached
+            if (stop && s.fixed_cl.on && !res.diverged && !ctl.on_target(Fn.cl) && it < s.max_iter) {
+                stop = false;
+                res.converged = false;
+                res.cauchy = false;
+            }
+            if (stop) {
                 if (!WALL_EXTRAP_ACTIVE && WALL_PRESSURE_EXTRAPOLATE && !res.diverged) {
                     std::printf("  (stopped before the extrapolated wall pressure was switched on)\n");
                 }
@@ -122,8 +133,28 @@ namespace euler {
                 }
             }
 
+            /*
+            Fixed CL (post.pdf slide 9): when the flow is converged enough, the controller moves alpha.
+            The new free stream enters through the farfield BC, so the residual of W^n is recomputed with
+            it before the implicit step (the residual jumps, slide 10, and the CFL ramp follows).
+            */
+            double norm_step = norm; // residual norm used by the CFL ramp of this step
+            if (ctl.update(norm, Fn.cl, flow_converged)) {
+                const double a_old = fs.alpha_deg; // alpha before the change
+                fs = make_freestream(fs.mach, ctl.alpha());
+                apply_bc(m, f, fs, s.jmin);
+                compute_residual(m, f, s.order);
+                norm_step = density_residual_norm(m, f);
+                mon.end_row(); // the message goes on its own line
+                if (s.print_every > 0) {
+                    std::printf("           fixed CL: CL %.8f -> alpha %.6f -> %.6f deg (change %d)\n", Fn.cl, a_old,
+                                fs.alpha_deg, ctl.changes());
+                }
+            }
+
             // CFL ramp (slide 40), capped by the backtracking cap, and local time step.
-            const double cfl = std::min(cfl_cap, std::min(s.cfl_max, std::max(s.cfl0, s.cfl0 * res.res0 / norm)));
+            const double cfl =
+                std::min(cfl_cap, std::min(s.cfl_max, std::max(s.cfl0, s.cfl0 * res.res0 / norm_step)));
             local_time_step(m, f, cfl, dt);
 
             // Time-term coefficient c of c Omega / dt.
@@ -258,6 +289,8 @@ namespace euler {
             }
         }
         apply_bc(m, f, fs, s.jmin);
+        res.alpha_deg = fs.alpha_deg;
+        res.alpha_changes = ctl.changes();
         return res;
     }
 
