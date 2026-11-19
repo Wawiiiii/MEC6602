@@ -123,15 +123,14 @@ ramp,
   \label{eq:ser}
 \end{equation}
 so that the scheme tends to Newton's method on $\mathbf{R}(\mathbf{W})=0$ as the residual falls.
-Each linear system~\eqref{eq:bdf1} is solved inexactly by a Jacobian-free Newton--Krylov method:
-restarted GMRES on the exact second-order operator, right-preconditioned by block
-symmetric Gauss--Seidel sweeps on the first-order Jacobian. The algorithm and its preconditioner
+Each linear system~\eqref{eq:bdf1} is solved approximately by Jacobian-free GMRES, preconditioned
+by block symmetric Gauss--Seidel sweeps on the first-order Jacobian. The algorithm and its preconditioner
 are presented in Appendix~\ref{app:gmres}. On the fine grids the iterations start from a
 full-multigrid (FMG) initial guess instead of the free stream: the solution is computed first on
 coarser grids and passed up to the fine grid, as described in Appendix~\ref{app:fmg}.
 
 A run is converged when the $L_2$ norm of the density residual, the root mean square of
-$R_\rho/\Omega$ over the cells, has dropped by a factor $10^{-12}$ from its first iteration, or
+$R_\rho/\Omega$ over the cells, has dropped by a factor $10^{-10}$ from its first iteration, or
 when the forces satisfy the Cauchy criterion over the last $N$ iterations,
 \begin{equation}
   \max_{n-N<k\le n}C^{\,k}-\min_{n-N<k\le n}C^{\,k}<\varepsilon_C,
@@ -484,6 +483,11 @@ $NC$ & $NC^2$ & $\alpha$ (deg) & $C_D$ & $C_M$ & $t$ (s) \\
     \label{fig:cp_M08_CL04}
   \end{minipage}
 \end{figure}
+
+\vfill
+\noindent{\footnotesize\textit{Note:} This work has been realised with the help of AI, notably to
+generate parts of the code such as the tests and the post-processing, as well as for debugging,
+commenting the code and writing the report.\par}
 
 \clearpage
 \phantomsection
